@@ -303,23 +303,19 @@ local function draw_treasure_table (sess, C, cfg)
     cfg._tre_init = cfg._tre_init or false
 
     ----------------------------------------------------------------
-    -- Construir lista ordenada por tiempo restante
+    -- Construir lista ordenada por slot
     ----------------------------------------------------------------
     local list, count = {}, 0
     for slot, info in pairs(sess.drops.pool_live or {}) do
         count = count + 1
         list[#list + 1] = {
-            slot  = slot,
-            info  = info,
-            rest  = math.max(0, math.floor(info.expire - os.clock()))
+            slot = slot,
+            info = info,
+            rest = math.max(0, math.floor(info.expire - os.clock()))
         }
     end
-    -- ► ORDEN ◄
     table.sort(list, function(a, b)
-        if a.rest == b.rest then
-            return a.slot < b.slot
-        end
-        return a.rest < b.rest
+        return a.slot < b.slot
     end)
 
     ----------------------------------------------------------------
@@ -354,32 +350,39 @@ local function draw_treasure_table (sess, C, cfg)
     end
 
     -- Cabeceras
-    imgui.Text('Item');        imgui.NextColumn()
-    imgui.Text('Winner');      imgui.NextColumn()
-    imgui.Text('Lot');         imgui.NextColumn()
-    imgui.Text('Left');        imgui.NextColumn()
+    imgui.Text('Item');
+    imgui.NextColumn()
+    imgui.Text('Winner');
+    imgui.NextColumn()
+    imgui.Text('Lot');
+    imgui.NextColumn()
+    imgui.Text('Left');
+    imgui.NextColumn()
     imgui.Separator()
 
     -- Filas
     for _, e in ipairs(list) do
         local info, rest = e.info, e.rest
 
-        local rcol = (rest < 30  and { 1, 0.4, 0.4, 1 })
-                  or (rest < 120 and { 1, 0.85, 0.25, 1 })
-                  or { 0.3, 1, 0.3, 1 }
-        local col  = is_cur(info.name)
-                  and (is_hundo(info.name) and C.HUNDO or C.CUR)
-                  or C.ITEM
+        local rcol = (rest < 30 and { 1, 0.4, 0.4, 1 })
+                or (rest < 120 and { 1, 0.85, 0.25, 1 })
+                or { 0.3, 1, 0.3, 1 }
+        local col = is_cur(info.name)
+                and (is_hundo(info.name) and C.HUNDO or C.CUR)
+                or C.ITEM
 
-        imgui.TextColored(col, title(info.name)); imgui.NextColumn()
-        imgui.TextColored(C.NAME, info.winner or ''); imgui.NextColumn()
+        imgui.TextColored(col, title(info.name));
+        imgui.NextColumn()
+        imgui.TextColored(C.NAME, info.winner or '');
+        imgui.NextColumn()
         if info.lot and info.lot > 0 then
             imgui.TextColored(C.QTY, tostring(info.lot))
         else
             imgui.Text('')
         end
         imgui.NextColumn()
-        imgui.TextColored(rcol, rest .. 's'); imgui.NextColumn()
+        imgui.TextColored(rcol, rest .. 's');
+        imgui.NextColumn()
     end
 
     ----------------------------------------------------------------
@@ -395,8 +398,8 @@ local function draw_treasure_table (sess, C, cfg)
         end
         if changed then
             local mode = ui.compact and 'compact' or 'full'
-            cfg.layout          = cfg.layout or {}
-            cfg.layout[mode]    = cfg.layout[mode] or {}
+            cfg.layout = cfg.layout or {}
+            cfg.layout[mode] = cfg.layout[mode] or {}
             cfg.layout[mode].cols = { table.unpack(cfg.tre_col_w) }
             persist(cfg)
         end
@@ -433,7 +436,7 @@ local function draw_settings_panel(cfg, C)
         cfg.alpha = a[1];
         changed = true
     end
-    -- Deslizador para escalar globalmente el tamaño de fuente de la ventana.
+    -- Control deslizante para ajustar la escala de la fuente de la ventana.
     local fs = { cfg.font_scale or 1.0 }
     if imgui.SliderFloat('Font Scale', fs, 0.5, 2.0, '%.2f') then
         cfg.font_scale = fs[1]
@@ -471,10 +474,9 @@ function ui.render(sess, cfg)
     end
     cfg.alpha = cfg.alpha or 0.9
     cfg.theme = cfg.theme or ((THEMES_OK and ADDON_THEMES.Default) and 'Default' or '')
-    local C = cfg.colors
-
-    -- Ajuste global de escala de fuente (tamaño). Por defecto 1.0 (sin cambios).
+    -- Ajuste de escala de fuente para toda la ventana. Valor por defecto 1.0 (sin escalado).
     cfg.font_scale = cfg.font_scale or 1.0
+    local C = cfg.colors
 
     ----------------------------------------------------------------
     -- Layout tables
@@ -524,10 +526,12 @@ function ui.render(sess, cfg)
         end
         return
     end
-    -- Aplica la escala de fuente configurada.
-    if cfg.font_scale and type(cfg.font_scale) == 'number' then
-        -- Asegura un mínimo razonable para evitar invisibilidad.
+    if imgui.SetWindowFontScale and cfg.font_scale then
         local fs = cfg.font_scale
+        if type(fs) ~= 'number' then
+            fs = tonumber(fs) or 1.0
+        end
+        -- Evita valores extremadamente bajos que podrían hacer ilegible el texto.
         if fs < 0.2 then
             fs = 0.2
         end
@@ -663,6 +667,7 @@ function ui.render(sess, cfg)
         end
     end
 
+
     ----------------------------------------------------------------
     -- Ajuste dinámico del alto de la ventana en modo compacto
     ----------------------------------------------------------------
@@ -742,6 +747,7 @@ function ui.render(sess, cfg)
             end
         end
     end
+
 
     ----------------------------------------------------------------
     -- TAB BAR principal
@@ -1045,103 +1051,108 @@ function ui.render(sess, cfg)
             ---------------------------------------------------------------- MANAGEMENT
             -- Tab for managing participants and tracking payments/deliveries.
             if imgui.BeginTabItem('Management') then
-                sess.management = sess.management or {}
-                -- Construye la lista de jugadores a mostrar:
-                local names_set = {}
-                if sess.drops and sess.drops.by_player then
-                    for name, _ in pairs(sess.drops.by_player) do
-                        names_set[name] = true
+                if not (sess and sess.is_event) then
+                    imgui.TextDisabled('No active event')
+                    imgui.EndTabItem()
+                else
+                    sess.management = sess.management or {}
+                    -- Construye la lista de jugadores a mostrar:
+                    local names_set = {}
+                    if sess.drops and sess.drops.by_player then
+                        for name, _ in pairs(sess.drops.by_player) do
+                            names_set[name] = true
+                        end
                     end
-                end
-                -- Jugadores ya registrados en la gestión
-                if sess.management then
-                    for name, _ in pairs(sess.management) do
-                        names_set[name] = true
+                    -- Jugadores ya registrados en la gestión
+                    if sess.management then
+                        for name, _ in pairs(sess.management) do
+                            names_set[name] = true
+                        end
                     end
-                end
-                -- Miembros de la party/alianza detectados por Treasure
-                local tm = rawget(_G, 'TreasurePartyMembers')
-                if tm then
-                    for _, name in ipairs(tm) do
-                        names_set[name] = true
+                    -- Miembros de la party/alianza detectados por Treasure
+                    local tm = rawget(_G, 'TreasurePartyMembers')
+                    if tm then
+                        for _, name in ipairs(tm) do
+                            names_set[name] = true
+                        end
                     end
-                end
-                -- Convierte el conjunto a lista ordenada alfabéticamente
-                local plist = {}
-                for name, _ in pairs(names_set) do
-                    table.insert(plist, name)
-                end
-                table.sort(plist)
-                local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
-                if imgui.BeginTable('tbl_manage', 4, TFLAGS) then
-                    imgui.TableSetupColumn('Name')
-                    imgui.TableSetupColumn('Glass paid')
-                    imgui.TableSetupColumn('Currency delivered')
-                    imgui.TableSetupColumn('Participation')
-                    imgui.TableHeadersRow()
-                    for _, pl in ipairs(plist) do
-                        -- Inicializa los campos de gestión por jugador si no existen
-                        sess.management[pl] = sess.management[pl] or {
-                            glass_paid = false,
-                            currency_delivered = false,
-                            participation = 'Full',
-                        }
-                        local m = sess.management[pl]
-                        imgui.TableNextRow()
-                        imgui.TableSetColumnIndex(0);
-                        imgui.TextColored(C.NAME, pl)
-                        imgui.TableSetColumnIndex(1)
-                        do
-                            local val = { m.glass_paid }
-                            if imgui.Checkbox('##gp_' .. pl, val) then
-                                m.glass_paid = val[1]
-                                sess.management[pl].glass_paid = val[1]
-                                if store and sess then
-                                    store.save(sess)
+                    -- Convierte el conjunto a lista ordenada alfabéticamente
+                    local plist = {}
+                    for name, _ in pairs(names_set) do
+                        table.insert(plist, name)
+                    end
+                    table.sort(plist)
+                    local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
+                    if imgui.BeginTable('tbl_manage', 4, TFLAGS) then
+                        imgui.TableSetupColumn('Name')
+                        imgui.TableSetupColumn('Glass paid')
+                        imgui.TableSetupColumn('Currency delivered')
+                        imgui.TableSetupColumn('Participation')
+                        imgui.TableHeadersRow()
+                        for _, pl in ipairs(plist) do
+                            -- Inicializa los campos de gestión por jugador si no existen
+                            sess.management[pl] = sess.management[pl] or {
+                                glass_paid = false,
+                                currency_delivered = false,
+                                participation = 'Full',
+                            }
+                            local m = sess.management[pl]
+                            imgui.TableNextRow()
+                            imgui.TableSetColumnIndex(0);
+                            imgui.TextColored(C.NAME, pl)
+                            imgui.TableSetColumnIndex(1)
+                            do
+                                local val = { m.glass_paid }
+                                if imgui.Checkbox('##gp_' .. pl, val) then
+                                    m.glass_paid = val[1]
+                                    sess.management[pl].glass_paid = val[1]
+                                    if store and sess and sess.is_event then
+                                        store.save(sess)
+                                    end
                                 end
                             end
-                        end
-                        imgui.TableSetColumnIndex(2)
-                        do
-                            local val = { m.currency_delivered }
-                            if imgui.Checkbox('##cd_' .. pl, val) then
-                                m.currency_delivered = val[1]
-                                sess.management[pl].currency_delivered = val[1]
-                                if store and sess then
-                                    store.save(sess)
+                            imgui.TableSetColumnIndex(2)
+                            do
+                                local val = { m.currency_delivered }
+                                if imgui.Checkbox('##cd_' .. pl, val) then
+                                    m.currency_delivered = val[1]
+                                    sess.management[pl].currency_delivered = val[1]
+                                    if store and sess and sess.is_event then
+                                        store.save(sess)
+                                    end
                                 end
                             end
-                        end
-                        imgui.TableSetColumnIndex(3)
-                        do
-                            local current = m.participation or 'Full'
-                            local label = current
-                            if imgui.BeginCombo('##part_' .. pl, label) then
-                                local options = {
-                                    'Full',
-                                    '4h', '3.5h', '3h', '2.5h', '2h', '1.5h', '1h', '0.5h', '0'
-                                }
-                                for _, opt in ipairs(options) do
-                                    local selected = (current == opt)
-                                    if imgui.Selectable(opt, selected) then
-                                        m.participation = opt
-                                        sess.management[pl].participation = opt
-                                        current = opt
-                                        if store and sess then
-                                            store.save(sess)
+                            imgui.TableSetColumnIndex(3)
+                            do
+                                local current = m.participation or 'Full'
+                                local label = current
+                                if imgui.BeginCombo('##part_' .. pl, label) then
+                                    local options = {
+                                        'Full',
+                                        '4h', '3.5h', '3h', '2.5h', '2h', '1.5h', '1h', '0.5h', '0'
+                                    }
+                                    for _, opt in ipairs(options) do
+                                        local selected = (current == opt)
+                                        if imgui.Selectable(opt, selected) then
+                                            m.participation = opt
+                                            sess.management[pl].participation = opt
+                                            current = opt
+                                            if store and sess and sess.is_event then
+                                                store.save(sess)
+                                            end
+                                        end
+                                        if selected then
+                                            imgui.SetItemDefaultFocus()
                                         end
                                     end
-                                    if selected then
-                                        imgui.SetItemDefaultFocus()
-                                    end
+                                    imgui.EndCombo()
                                 end
-                                imgui.EndCombo()
                             end
                         end
+                        imgui.EndTable()
                     end
-                    imgui.EndTable()
+                    imgui.EndTabItem()
                 end
-                imgui.EndTabItem()
             end
 
             ---------------------------------------------------------------- SETTINGS
