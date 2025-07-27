@@ -13,7 +13,58 @@ local store = require('store')
 --------------------------------------------------------------------
 -- instant-save helper
 --------------------------------------------------------------------
+-- Serializar
+local function _dump(tbl, ind)
+    ind = ind or ''
+    local out = '{\n'
+    for k, v in pairs(tbl) do
+        -- No serializar claves internas ni funciones
+        if not (type(k) == 'string' and k:sub(1, 1) == '_') and type(v) ~= 'function' then
+            if type(k) == 'number' then
+                out = out .. ind .. '  [' .. k .. '] = '
+            else
+                out = out .. ind .. '  [' .. string.format('%q', k) .. '] = '
+            end
+            if type(v) == 'table' then
+                out = out .. _dump(v, ind .. '  ')
+            elseif type(v) == 'string' then
+                out = out .. string.format('%q', v)
+            else
+                out = out .. tostring(v)
+            end
+            out = out .. ',\n'
+        end
+    end
+    return out .. ind .. '}'
+end
+
+local function _save_config_file(cfg)
+    local path = cfg and cfg._config_file
+    if not path or path == '' then
+        return
+    end
+    local dir = path:match('^(.*)[/\\]')
+    if dir then
+        local ok = pcall(function()
+            if not ashita.fs.exists(dir) then
+                ashita.fs.create_dir(dir)
+            end
+        end)
+    end
+    local f, err = io.open(path, 'w+')
+    if not f then
+        return
+    end
+    -- Serializa la tabla y la escribe
+    f:write('return ' .. _dump(cfg) .. '\n')
+    f:close()
+end
+
 local function persist(cfg)
+    if cfg and cfg._config_file then
+        local ok = pcall(_save_config_file, cfg)
+        return
+    end
     if SETTINGS_OK and settings and settings.save then
         if not pcall(settings.save) then
             pcall(settings.save, cfg)
