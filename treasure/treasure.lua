@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.0.1
+-- Versión: 1.0.2
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.1'
+addon.version = '1.0.2'
 
 require('common')
 local settings = require('settings')
@@ -77,15 +77,35 @@ local function is_hiding_menu_active()
     if addr == 0 then
         return false
     end
+
     local ptr = ashita.memory.read_uint32(addr)
-    ptr = ptr ~= 0 and ashita.memory.read_uint32(ptr) or 0
-    local header = ptr ~= 0 and ashita.memory.read_uint32(ptr + 4) or 0
+    if ptr == 0 then
+        return false
+    end
+    ptr = ashita.memory.read_uint32(ptr)
+    if ptr == 0 then
+        return false
+    end
+
+    local header = ashita.memory.read_uint32(ptr + 4)
     if header == 0 then
         return false
     end
-    local raw = (ashita.memory.read_string(header + 0x46, 16) or '')
-            :gsub('\0', ''):gsub('^menu0000', ''):gsub(' ', '')
-    return hidden_menus[raw] == true
+
+    local raw = ashita.memory.read_string(header + 0x46, 16)
+    if not raw then
+        return false
+    end
+
+    local cleaned = raw:gsub('\0', '')
+    if #cleaned >= 9 then
+        cleaned = cleaned:sub(9)
+    else
+        cleaned = ''
+    end
+    cleaned = cleaned:gsub(' ', '')
+
+    return hidden_menus[cleaned] == true
 end
 
 local function in_world()
