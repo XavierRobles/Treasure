@@ -1,6 +1,6 @@
 # Treasure
 
-**Version:** 1.0.0  
+**Version:** 1.0.1  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,17 @@
 ---
 
 ## 📌 Changelog
+### v1.0.1 (English)
+
+- Fixed a bug that prevented per‑character profiles from saving/loading correctly.  
+- Default compact‑mode position adjusted to fit 1920 × 1080 screens.  
+- Added early character‑change detection to reload the correct settings without relogging.
+
+### v1.0.1 (Español)
+
+- Corregido un bug que impedía guardar/cargar los perfiles por personaje.  
+- Posición por defecto del modo compacto ajustada para resoluciones 1920 × 1080.  
+- Se añadió detección temprana de cambio de personaje para recargar la configuración sin reloguear.
 
 ### v1.0.0 (English)
 
