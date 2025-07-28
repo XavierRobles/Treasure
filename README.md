@@ -1,6 +1,6 @@
-# Treasure
+# Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.1  
+**Version:** 1.0.2  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,14 @@
 ---
 
 ## 📌 Changelog
+### v1.0.2 (English)
+
+- Fix: The addon now properly hides when any in‑game menu is opened (inventory, map, full‑log, etc.).
+
+### v1.0.2 (Español)
+
+- Corrección: El addon vuelve a ocultarse correctamente al abrir cualquier menú del juego (inventario, mapa, full‑log, etc.).
+
 ### v1.0.1 (English)
 
 - Fixed a bug that prevented per‑character profiles from saving/loading correctly.  
