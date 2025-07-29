@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.2  
+**Version:** 1.0.3  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,18 @@
 ---
 
 ## 📌 Changelog
+### v1.0.3 (English)
+
+- Items in the treasure‑pool table are now sorted by **time left** (earliest → latest).  
+  If two items have the same remaining time, they are ordered by slot number.  
+- **Members are no longer added to the event when viewing past runs outside Dynamis.**
+
+### v1.0.3 (Español)
+
+- Los objetos de la tabla del treasure‑pool ahora se ordenan por **tiempo restante** (del que antes expira al que más dura).  
+  Si dos ítems tienen el mismo tiempo, se ordenan por número de slot.  
+- **Ya no se añaden miembros al evento al revisar runs pasadas fuera de Dynamis.**
+
 ### v1.0.2 (English)
 
 - Fix: The addon now properly hides when any in‑game menu is opened (inventory, map, full‑log, etc.).
