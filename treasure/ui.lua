@@ -366,8 +366,12 @@ local function draw_treasure_table (sess, C, cfg)
         }
     end
     table.sort(list, function(a, b)
+        if a.rest ~= b.rest then
+            return a.rest < b.rest
+        end
         return a.slot < b.slot
     end)
+
 
     ----------------------------------------------------------------
     -- Altura de la región scroll (modo compacto = altura dinámica)
@@ -1121,10 +1125,12 @@ function ui.render(sess, cfg)
                         end
                     end
                     -- Miembros de la party/alianza detectados por Treasure
-                    local tm = rawget(_G, 'TreasurePartyMembers')
-                    if tm then
-                        for _, name in ipairs(tm) do
-                            names_set[name] = true
+                    if ui.history_session == nil then
+                        local tm = rawget(_G, 'TreasurePartyMembers')
+                        if tm then
+                            for _, name in ipairs(tm) do
+                                names_set[name] = true
+                            end
                         end
                     end
                     -- Convierte el conjunto a lista ordenada alfabéticamente
