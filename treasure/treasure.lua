@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.3'
+addon.version = '1.0.4'
 
 require('common')
 local settings = require('settings')
