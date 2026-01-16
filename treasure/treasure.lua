@@ -43,9 +43,41 @@ local function _dump_cfg(tbl, ind)
     return out .. ind .. '}'
 end
 
+local SEP = "\xFD\x01\x02\x05\xA9\xFD"
+local STAR = string.char(0x81, 0x9A)
+local STAR_WHITE = string.char(0x81, 0x99) -- ☆
+local DOT_HUGE = string.char(0x81, 0x9C) -- ●
+local DOT_HUGE_OPEN = string.char(0x81, 0x9B) -- ○
+local DOT_SMALL    = string.char(0x81, 0x45) -- ・
 ------------------------------------------------------------------ estado
 local session, idle_session, lastPool, lastSave = nil, nil, 0, 0
 local cfg, lastPrefSave = nil, 0
+
+------------------------------------------------------------------ party chat queue (rate limit)
+local party_chat_queue = {}
+local last_party_chat_sent = 0
+local PARTY_CHAT_DELAY = 2.0
+
+local function enqueue_party_chat(msg)
+    if not msg or msg == '' then
+        return
+    end
+    party_chat_queue[#party_chat_queue + 1] = msg
+end
+
+local function process_party_chat_queue()
+    if #party_chat_queue == 0 then
+        return
+    end
+    if (os.clock() - last_party_chat_sent) < PARTY_CHAT_DELAY then
+        return
+    end
+
+    local msg = table.remove(party_chat_queue, 1)
+    AshitaCore:GetChatManager():QueueCommand(1, '/p ' .. msg)
+    last_party_chat_sent = os.clock()
+end
+
 
 ------------------------------------------------------------------ helpers
 local function is_ui_fully_hidden()
@@ -281,14 +313,185 @@ end
 
 ------------------------------------------------------------------ comando /tr
 ashita.events.register('command', 'treasure_cmd', function(e)
-    local a = e.command:args();
-    if a[1] ~= '/tr' then
+    local args = e.command:args()
+    if not args or #args == 0 or args[1] ~= '/tr' then
         return
     end
-    e.blocked = true;
-    cfg.visible = not cfg.visible;
+
+    e.blocked = true
+
+    local function norm(s)
+        return (s or ''):gsub('%c', ''):lower():gsub('%s+', ' ')
+                        :gsub('^%s+', ''):gsub('%s+$', '')
+    end
+
+    local function is_cur(name)
+        local s = norm(name or '')
+        return (s:find('bronzepiece') ~= nil)
+                or (s:find('whiteshell') ~= nil)
+                or (s:find('byne bill') ~= nil)
+                or (s:find('silverpiece') ~= nil)
+                or (s:find('jadeshell') ~= nil)
+    end
+
+    local function is_hundo(name)
+        local s = norm(name)
+        if s:find('byne bill') then
+            return s:find('^100 ') ~= nil or s:find('one hundred') ~= nil
+        end
+        if s:find('silverpiece') then
+            return s:find('montiont') ~= nil or s:find('m%.') ~= nil
+        end
+        if s:find('jadeshell') then
+            return s:find('lungo%-nango') ~= nil or s:find('l%.') ~= nil
+        end
+        return false
+    end
+
+    local function to_units(name, qty)
+        qty = tonumber(qty) or 0
+        return is_hundo(name) and (100 * qty) or qty
+    end
+
+    local function base_cur(name)
+        local s = norm(name)
+        if s:find('byne bill') then
+            return 'Byne Bill'
+        end
+        if s:find('whiteshell') then
+            return 'Whiteshell'
+        end
+        if s:find('jadeshell') then
+            return 'Whiteshell'
+        end
+        if s:find('bronzepiece') then
+            return 'Bronzepiece'
+        end
+        if s:find('silverpiece') then
+            return 'Bronzepiece'
+        end
+        return name or ''
+    end
+
+    local function display_cur(base)
+        if base == 'Bronzepiece' then
+            return 'Ordelle Bronzepiece', 'Bronze'
+        end
+        if base == 'Whiteshell' then
+            return 'Tukuku Whiteshell', 'Tukus'
+        end
+        if base == 'Byne Bill' then
+            return 'One Byne Bill', 'Byne'
+        end
+        return base, base
+    end
+
+    local function chat_party(msg)
+        if not msg or msg == '' then
+            return
+        end
+        enqueue_party_chat(msg)
+    end
+
+    local function print_local(msg)
+        print(chat.header('Treasure'):append(chat.message(msg or '')))
+    end
+
+    local function ensure_event()
+        if not (session and session.is_event and session.drops and session.drops.currency_total) then
+            print_local('No active Dynamis session.')
+            return false
+        end
+        return true
+    end
+
+    -- /tr  -> toggle ui
+    if #args == 1 then
+        cfg.visible = not cfg.visible
+        save_character_settings(cfg)
+        return
+    end
+
+    -- /tr c | /tr currency | /tr who
+    local sub = (args[2] or ''):lower()
+    local want_totals = (sub == 'c') or (sub == 'currency') or (sub == 'cur')
+    local want_who = (sub == 'who')
+
+    if want_totals or want_who then
+        if not ensure_event() then
+            return
+        end
+
+        -- /tr who  -> per-player currency drops
+        if want_who then
+            local byp = (session.drops and session.drops.by_player) or {}
+            local any = false
+
+            for player, bag in pairs(byp) do
+                local agg = {}
+                for item, qty in pairs(bag or {}) do
+                    if is_cur(item) then
+                        local base = base_cur(item)
+                        agg[base] = (agg[base] or 0) + to_units(item, qty)
+                    end
+                end
+
+                local parts = {}
+                for _, base in ipairs({ 'Whiteshell', 'Bronzepiece', 'Byne Bill' }) do
+                    local v = agg[base] or 0
+                    if v > 0 then
+                        local _, short = display_cur(base)
+                        parts[#parts + 1] = string.format('%s%s%s%d', SEP, short, SEP, v)
+                    end
+                end
+
+                if #parts > 0 then
+                    any = true
+                    chat_party(string.format('%s: %s', player, table.concat(parts, DOT_SMALL)))
+                end
+            end
+
+            if not any then
+                chat_party('No currency drops recorded by player.')
+            end
+            return
+        end
+
+        -- Totals per base currency (100s already included)
+        local agg = {}
+        local total = 0
+
+        for item, qty in pairs(session.drops.currency_total or {}) do
+            if is_cur(item) then
+                local base = base_cur(item)
+                local units = to_units(item, qty)
+                agg[base] = (agg[base] or 0) + units
+            end
+        end
+
+        for _, base in ipairs({ 'Whiteshell', 'Bronzepiece', 'Byne Bill' }) do
+            local v = agg[base] or 0
+            if v > 0 then
+                local _, short = display_cur(base)
+                chat_party(string.format('%s%s%s %s %d', SEP, short, SEP, STAR_WHITE, v))
+                total = total + v
+            end
+        end
+
+
+        chat_party(string.format('%sTotal%s %s %d %s', SEP, SEP, STAR, total, STAR))
+
+
+        return
+    end
+
+    -- fallback: keep toggle behavior if unknown subcommand
+    if not cfg then
+        cfg = ensure_settings()
+    end
     save_character_settings(cfg)
 end)
+
 
 ------------------------------------------------------------------ login/logout
 ashita.events.register('packet_in', 'login_detector', function(e)
@@ -345,9 +548,11 @@ ashita.events.register('d3d_present', 'treasure_present', function()
                 session.ended = false
                 session.is_event = true
                 session.management = session.management or {}
+                session.split = session.split or { event_type = 'Custom', duration_minutes = 0 }
 
                 print(chat.header('Treasure'):append(chat.message(
                         string.format('%s continues. Inventorys ready, ambition reloaded.', zoneName))))
+
 
             else
                 ----------------------------------------------------------------
@@ -363,6 +568,8 @@ ashita.events.register('d3d_present', 'treasure_present', function()
                 session.zone_id = zid
                 session.start_time = now
                 session.management = {}
+                session.split = session.split or { event_type = 'Custom', duration_minutes = 0 }
+                session.ended = false
 
                 store.save(session)
 
@@ -406,6 +613,7 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         lastPartyUpdate = os.clock()
     end
 
+    process_party_chat_queue()
     local hide = is_ui_fully_hidden() or is_hiding_menu_active()
     if cfg.visible and not hide then
         ui.render(draw_session, cfg)
