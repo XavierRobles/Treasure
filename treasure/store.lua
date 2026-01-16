@@ -5,6 +5,7 @@
 require('common')
 
 local store = {}
+local res = AshitaCore:GetResourceManager()
 local root = ('%s\\config\\addons\\treasure\\sessions\\')
         :format(AshitaCore:GetInstallPath())
 if not ashita.fs.exists(root) then
@@ -14,10 +15,39 @@ end
 local zone_tag = {
     [134] = 'Beauc', [135] = 'Xarcabard', [185] = 'Sandy', [186] = 'Bastok',
     [187] = 'Windy', [188] = 'Jeuno',
+    -- Dreamland zones (Dynamis - <zone>)
+    [39] = 'Valkurm', [40] = 'Buburimu', [41] = 'Qufim', [42] = 'Tavnazia',
+    -- Dynamis-Divergence cities
+    [294] = 'Sandy[D]', [295] = 'Bastok[D]', [296] = 'Windy[D]', [297] = 'Jeuno[D]',
 }
+
 local function ztag(zid)
-    return zone_tag[zid] or tostring(zid)
+    if zone_tag[zid] then
+        return zone_tag[zid]
+    end
+
+    local name = (res and res:GetString('zones.names', zid)) or ''
+    if name ~= '' then
+        -- Common forms: "Dynamis - Valkurm", "Dynamis - San d'Oria", "Dynamis - San d'Oria [D]"
+        local part = name:match('^Dynamis%s*%-%s*(.+)$') or name:match('^Dynamis%s+(.+)$')
+        if part and part ~= '' then
+            local normalize = {
+                ["San d'Oria"] = 'Sandy',
+                ["Bastok"] = 'Bastok',
+                ["Windurst"] = 'Windy',
+                ["Jeuno"] = 'Jeuno',
+                ["Beaucedine"] = 'Beauc',
+                ["Beaucedine Glacier"] = 'Beauc',
+                ["Xarcabard"] = 'Xarcabard',
+            }
+            return normalize[part] or part
+        end
+        return name
+    end
+
+    return tostring(zid)
 end
+
 local function fname(zid, ts, pname)
     return ('Dynamis - %s - %s - %s.lua')
             :format(ztag(zid), os.date('%Y-%m-%d', ts), pname)
@@ -44,16 +74,17 @@ local function dump(tbl, ind)
     return out .. ind .. '}'
 end
 
--- Save a session table to disk.
+-- Saves a session table to disk.
 function store.save(sess)
-    -- Obtain the player's current character name.
+    -- Get the current character name.
     local ent = GetPlayerEntity()
     local pname = (ent and ent.Name) or (sess and sess.player_name) or "UNKNOWN"
     if not pname or pname == "UNKNOWN" then
-        -- print("[Treasure][store] No se guarda la sesión: nombre de jugador UNKNOWN")
+        -- print("[Treasure][store] Session not saved: player name is UNKNOWN")
         return false
     end
     sess.player_name = pname
+
     local filename
     if sess._filename and sess._filename ~= '' then
         filename = sess._filename
@@ -61,6 +92,7 @@ function store.save(sess)
         filename = fname(sess.zone_id, sess.start_time, pname)
         sess._filename = filename
     end
+
     local path = root .. filename
     local f = io.open(path, 'w+')
     if not f then
@@ -75,16 +107,27 @@ function store.load(zid)
     local ent = GetPlayerEntity()
     local pname = (ent and ent.Name)
     if not pname or pname == "UNKNOWN" then
-        -- print("[Treasure][store] No se carga la sesión: nombre de jugador UNKNOWN")
+        -- print("[Treasure][store] Session not loaded: player name is UNKNOWN")
         return nil
     end
-    local path = root .. fname(zid, os.time(), pname)
-    local pattern = ('Dynamis - %s - %s - %s.lua')
-            :format(ztag(zid), os.date('%Y-%m-%d'), pname)
+
+    local today = os.date('%Y-%m-%d')
+    local tag = ztag(zid)
+    local pattern = ('Dynamis - %s - %s - %s.lua'):format(tag, today, pname)
     local fullpath = root .. pattern
+
+    -- Backward-compat: old sessions may have been saved as "Dynamis - <zone_id> - ..."
     if not ashita.fs.exists(fullpath) then
-        return nil
+        local fallback = ('Dynamis - %s - %s - %s.lua'):format(tostring(zid), today, pname)
+        local fallback_path = root .. fallback
+        if ashita.fs.exists(fallback_path) then
+            pattern = fallback
+            fullpath = fallback_path
+        else
+            return nil
+        end
     end
+
     local ok, sess = pcall(dofile, fullpath)
     if not ok or not sess then
         return nil
@@ -92,39 +135,59 @@ function store.load(zid)
     if type(sess) == 'table' then
         sess._filename = pattern
         if not sess.player_name or sess.player_name == '' then
-            local pname = pattern:match(' %- ([^%-]+)%.lua$')
-            sess.player_name = pname or sess.player_name
+            local p2 = pattern:match(' %- ([^%-]+)%.lua$')
+            sess.player_name = p2 or sess.player_name
         end
     end
     return sess
 end
 
--- Devuelve una lista de nombres de ficheros de sesión
+-- Returns a list of saved session filenames.
 function store.list_sessions()
-    local files = {}
-    local sep = package.config:sub(1, 1) -- '\\' en Windows, '/' en Unix
+    local items = {}
+    local sep = package.config:sub(1, 1)
     local cmd
+
     if sep == '\\' then
-        -- Comando DIR para Windows
         cmd = 'dir /b "' .. root:gsub('/', '\\') .. '"'
     else
-        -- Comando ls para sistemas tipo Unix
         cmd = 'ls -1 "' .. root .. '"'
     end
+
+    local function date_key(fname)
+        local y, m, d = fname:match('%s%-%s(%d%d%d%d)%-(%d%d)%-(%d%d)%s%-%s')
+        if not y then
+            return 0
+        end
+        return (tonumber(y) or 0) * 10000 + (tonumber(m) or 0) * 100 + (tonumber(d) or 0)
+    end
+
     local p = io.popen(cmd)
     if p then
         for line in p:lines() do
             if line:match('%.lua$') then
-                table.insert(files, line)
+                items[#items + 1] = { name = line, key = date_key(line) }
             end
         end
         p:close()
     end
-    table.sort(files)
+
+    table.sort(items, function(a, b)
+        if a.key ~= b.key then
+            return a.key > b.key
+        end
+        return a.name < b.name
+    end)
+
+    local files = {}
+    for i = 1, #items do
+        files[#files + 1] = items[i].name
+    end
     return files
 end
 
--- Carga una sesión guardada a partir de su nombre.
+
+-- Loads a session from a given filename.
 function store.load_file(filename)
     if not filename or filename == '' then
         return nil
@@ -132,7 +195,7 @@ function store.load_file(filename)
     local path = root .. filename
     local ok, sess = pcall(dofile, path)
     if ok and type(sess) == 'table' then
-        -- filename.  The file naming convention is:
+        -- Filename convention:
         -- "Dynamis - <zone_tag> - <YYYY-MM-DD> - <player>.lua"
         sess._filename = filename
         if not sess.player_name or sess.player_name == '' then

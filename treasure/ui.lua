@@ -1125,12 +1125,9 @@ function ui.render(sess, cfg)
                         end
                     end
                     -- Miembros de la party/alianza detectados por Treasure
-                    if ui.history_session == nil then
-                        local tm = rawget(_G, 'TreasurePartyMembers')
-                        if tm then
-                            for _, name in ipairs(tm) do
-                                names_set[name] = true
-                            end
+                    if sess.participants then
+                        for name, _ in pairs(sess.participants) do
+                            names_set[name] = true
                         end
                     end
                     -- Convierte el conjunto a lista ordenada alfabéticamente
@@ -1147,65 +1144,76 @@ function ui.render(sess, cfg)
                         imgui.TableSetupColumn('Participation')
                         imgui.TableHeadersRow()
                         for _, pl in ipairs(plist) do
-                            -- Inicializa los campos de gestión por jugador si no existen
-                            sess.management[pl] = sess.management[pl] or {
-                                glass_paid = false,
-                                currency_delivered = false,
-                                participation = 'Full',
-                            }
                             local m = sess.management[pl]
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0);
-                            imgui.TextColored(C.NAME, pl)
-                            imgui.TableSetColumnIndex(1)
-                            do
-                                local val = { m.glass_paid }
-                                if imgui.Checkbox('##gp_' .. pl, val) then
-                                    m.glass_paid = val[1]
-                                    sess.management[pl].glass_paid = val[1]
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                            end
-                            imgui.TableSetColumnIndex(2)
-                            do
-                                local val = { m.currency_delivered }
-                                if imgui.Checkbox('##cd_' .. pl, val) then
-                                    m.currency_delivered = val[1]
-                                    sess.management[pl].currency_delivered = val[1]
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                            end
-                            imgui.TableSetColumnIndex(3)
-                            do
-                                local current = m.participation or 'Full'
-                                local label = current
-                                if imgui.BeginCombo('##part_' .. pl, label) then
-                                    local options = {
-                                        'Full',
-                                        '4h', '3.5h', '3h', '2.5h', '2h', '1.5h', '1h', '0.5h', '0'
+
+                            -- Only create management entries for real event participants (or players with drops).
+                            if m == nil then
+                                local is_participant = (sess.participants and sess.participants[pl]) ~= nil
+                                local has_drops = (sess.drops and sess.drops.by_player and sess.drops.by_player[pl]) ~= nil
+                                if is_participant or has_drops then
+                                    sess.management[pl] = {
+                                        glass_paid = false,
+                                        currency_delivered = false,
+                                        participation = 'Full',
                                     }
-                                    for _, opt in ipairs(options) do
-                                        local selected = (current == opt)
-                                        if imgui.Selectable(opt, selected) then
-                                            m.participation = opt
-                                            sess.management[pl].participation = opt
-                                            current = opt
-                                            if store and sess and sess.is_event then
-                                                store.save(sess)
+                                    m = sess.management[pl]
+                                end
+                            end
+
+                            -- If still nil, skip (not part of this event).
+                            if m ~= nil then
+                                imgui.TableNextRow()
+                                imgui.TableSetColumnIndex(0)
+                                imgui.TextColored(C.NAME, pl)
+
+                                imgui.TableSetColumnIndex(1)
+                                do
+                                    local val = { m.glass_paid }
+                                    if imgui.Checkbox('##gp_' .. pl, val) then
+                                        m.glass_paid = val[1]
+                                        if store and sess and sess.is_event then
+                                            store.save(sess)
+                                        end
+                                    end
+                                end
+
+                                imgui.TableSetColumnIndex(2)
+                                do
+                                    local val = { m.currency_delivered }
+                                    if imgui.Checkbox('##cd_' .. pl, val) then
+                                        m.currency_delivered = val[1]
+                                        if store and sess and sess.is_event then
+                                            store.save(sess)
+                                        end
+                                    end
+                                end
+
+                                imgui.TableSetColumnIndex(3)
+                                do
+                                    local current = m.participation or 'Full'
+                                    if imgui.BeginCombo('##part_' .. pl, current) then
+                                        local options = {
+                                            'Full',
+                                            '4h', '3.5h', '3h', '2.5h', '2h', '1.5h', '1h', '0.5h', '0'
+                                        }
+                                        for _, opt in ipairs(options) do
+                                            local selected = (current == opt)
+                                            if imgui.Selectable(opt, selected) then
+                                                m.participation = opt
+                                                if store and sess and sess.is_event then
+                                                    store.save(sess)
+                                                end
+                                            end
+                                            if selected then
+                                                imgui.SetItemDefaultFocus()
                                             end
                                         end
-                                        if selected then
-                                            imgui.SetItemDefaultFocus()
-                                        end
+                                        imgui.EndCombo()
                                     end
-                                    imgui.EndCombo()
                                 end
                             end
                         end
+
                         imgui.EndTable()
                     end
                     imgui.EndTabItem()

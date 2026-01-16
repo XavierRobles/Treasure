@@ -223,32 +223,61 @@ end
 ------------------------------------------------------------------ party list
 local party_members, lastPartyUpdate = {}, 0
 local function update_party_members()
-    local party = AshitaCore:GetMemoryManager():GetParty();
+    local party = AshitaCore:GetMemoryManager():GetParty()
     if not party then
         return
     end
-    local tmp = {}
+
+    local tmp_all = {}
     for i = 0, 17 do
         if party:GetMemberIsActive(i) == 1 then
             local nm = party:GetMemberName(i)
             if nm and #nm > 0 then
-                tmp[nm:gsub('%z', ''):gsub('%s+$', '')] = true
+                nm = nm:gsub('%z', ''):gsub('%s+$', '')
+                tmp_all[nm] = true
             end
         end
     end
-    party_members = {};
-    for n, _ in pairs(tmp) do
+
+    party_members = {}
+    for n, _ in pairs(tmp_all) do
         party_members[#party_members + 1] = n
     end
-    table.sort(party_members);
+    table.sort(party_members)
     _G.TreasurePartyMembers = party_members
-end
-update_party_members()
-ashita.events.register('packet_in', 'party_update', function(e)
-    if e.id == 0x0C8 or e.id == 0x0DD then
-        update_party_members()
+
+    -- Only persist participants that are actually in the same zone as the event.
+    if not (session and session.is_event and not session.ended and not ui.history_session) then
+        return
     end
-end)
+
+    local myZid = party:GetMemberZone(0)
+    if not (core.is_dynamis(myZid) and session.zone_id == myZid) then
+        return
+    end
+
+    session.participants = session.participants or {}
+    session.drops = session.drops or core.new_drop_state()
+    session.drops.by_player = session.drops.by_player or {}
+    session.drops.equips_by_player = session.drops.equips_by_player or {}
+
+    for i = 0, 17 do
+        if party:GetMemberIsActive(i) == 1 then
+            local memberZid = party:GetMemberZone(i)
+            if memberZid == session.zone_id then
+                local nm = party:GetMemberName(i)
+                if nm and #nm > 0 then
+                    nm = nm:gsub('%z', ''):gsub('%s+$', '')
+                    session.participants[nm] = true
+                    session.drops.by_player[nm] = session.drops.by_player[nm] or {}
+                    session.drops.equips_by_player[nm] = session.drops.equips_by_player[nm] or {}
+                end
+            end
+        end
+    end
+end
+
+
 
 ------------------------------------------------------------------ comando /tr
 ashita.events.register('command', 'treasure_cmd', function(e)
@@ -313,6 +342,7 @@ ashita.events.register('d3d_present', 'treasure_present', function()
                 -- Reanudamos una sesión guardada
                 ----------------------------------------------------------------
                 session = saved
+                session.ended = false
                 session.is_event = true
                 session.management = session.management or {}
 
@@ -345,8 +375,9 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         end
 
     else
-        -- salimos de Dynamis
+        -- salimos de Dynamis (lock the session so it can't be modified anymore)
         if session and session.is_event then
+            session.ended = true
             store.save(session)
         end
         session = nil
@@ -401,6 +432,7 @@ end)
 ------------------------------------------------------------------ zone salida
 ashita.events.register('zone_change', 'treasure_zone', function()
     if session and session.is_event then
+        session.ended = true
         store.save(session)
     end
     session = nil
