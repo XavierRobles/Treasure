@@ -24,6 +24,28 @@ function core.is_dynamis(zid)
     return name:find('Dynamis') and true or false
 end
 
+function core.dynamis_max_minutes(zid)
+    zid = tonumber(zid)
+
+    -- Cities: 3h30
+    if zid == 185 or zid == 186 or zid == 187 or zid == 188 then
+        return 210
+    end
+
+    -- Dreamlands: 2h
+    if zid == 39 or zid == 40 or zid == 41 or zid == 42 then
+        return 120
+    end
+
+    -- Northlands: 4h
+    if zid == 134 or zid == 135 then
+        return 240
+    end
+
+    -- Safe default
+    return 240
+end
+
 function core.new_drop_state()
     return {
         currency_total = {}, -- { item = qty }

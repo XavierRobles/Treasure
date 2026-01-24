@@ -8,6 +8,7 @@ local ImGuiCol = imgui.Col
 local SETTINGS_OK, settings = pcall(require, 'settings')   -- settings.lua
 local THEMES_OK, ADDON_THEMES = pcall(require, 'ev_themes')  -- palette file
 local store = require('store')
+local core = require('core')
 -------------------------------------------------------------------------------
 
 --------------------------------------------------------------------
@@ -207,9 +208,29 @@ local function keys(t)
     table.sort(k);
     return k
 end
+local function is_valid_player_name(name)
+    if not name or name == '' then
+        return false
+    end
+    local s = norm(name)
+    if s == '' then
+        return false
+    end
+    if s == 'to' then
+        return false
+    end
+    return true
+end
 local function lost_name(l)
-    return (l:match('%d%d:%d%d:%d%d%s+(.+)%s+lost%.?')
-            or l:match('^(.+)%s+lost%.?$')):gsub('%s+$', '')
+    if type(l) == 'table' then
+        return (l.item or ''):gsub('%s+$', '')
+    end
+
+    local s = tostring(l or '')
+    local it = s:match('%d%d:%d%d:%d%d%s+(.+)%s+lost%.?')
+            or s:match('^(.+)%s+lost%.?$')
+            or s:match('^(.+)%s+is%s+lost%.?$')
+    return (it or s):gsub('%s+$', '')
 end
 local function is_cur(name)
     local s = norm(name or '')
@@ -218,6 +239,68 @@ local function is_cur(name)
             or (s:find('byne bill') ~= nil)
             or (s:find('silverpiece') ~= nil)
             or (s:find('jadeshell') ~= nil)
+end
+
+local function default_event_minutes(sess)
+    local zid = tonumber(sess and sess.zone_id)
+
+    -- Cities: 3h30
+    if zid == 185 or zid == 186 or zid == 187 or zid == 188 then
+        return 210
+    end
+
+    -- Dreamlands: 2h
+    if zid == 39 or zid == 40 or zid == 41 or zid == 42 then
+        return 120
+    end
+
+    -- Northlands: 4h
+    if zid == 134 or zid == 135 then
+        return 240
+    end
+
+    -- Safe default
+    return 240
+end
+
+
+local function fmt_hms(total_seconds)
+    local s = math.max(0, tonumber(total_seconds) or 0)
+    local h = math.floor(s / 3600)
+    s = s - (h * 3600)
+    local m = math.floor(s / 60)
+    s = s - (m * 60)
+    return string.format('%02d:%02d:%02d', h, m, s)
+end
+
+local function dynamis_time_left_text(sess)
+    if not (sess and sess.dynamis_timer) then
+        return nil
+    end
+
+    local now = os.time()
+    local expel_at = tonumber(sess.dynamis_timer.expel_at)
+    local fallback_end = tonumber(sess.dynamis_timer.fallback_end_at)
+
+    if not fallback_end then
+        local max_min = core.dynamis_max_minutes(sess.zone_id)
+        fallback_end = (tonumber(sess.start_time) or now) + (max_min * 60)
+        sess.dynamis_timer.fallback_end_at = fallback_end
+    end
+
+    local rem
+    if expel_at then
+        rem = expel_at - now
+        if rem <= 0 then
+            sess.dynamis_timer.desynced = true
+            rem = fallback_end - now
+        end
+    else
+        rem = fallback_end - now
+    end
+
+    local prefix = (sess.dynamis_timer.desynced and '~ ' or '')
+    return prefix .. fmt_hms(rem)
 end
 
 
@@ -356,7 +439,7 @@ local function draw_treasure_table (sess, C, cfg)
         return
     end
 
-    -- Anchos de columnas persistentes
+    --Anchos de columnas persistentes
     cfg.tre_col_w = cfg.tre_col_w or { 250, 150, 60, 60 }
     cfg._tre_init = cfg._tre_init or false
 
@@ -647,7 +730,17 @@ function ui.render(sess, cfg)
         local txt2_w, _ = imgui.CalcTextSize('X')
         local btn2_w = txt2_w + pad * 2
 
+        if ui.compact and sess and sess.is_event then
+            local t = dynamis_time_left_text(sess)
+            if t then
+                imgui.SetCursorPosX(pad)
+                imgui.TextUnformatted(t)
+                imgui.SameLine()
+            end
+        end
+
         imgui.SetCursorPosX(win_w - btn1_w - btn2_w - spacing - pad)
+
 
         -- Toggle compact / full
         if imgui.SmallButton(lbl_toggle) then
@@ -806,11 +899,14 @@ function ui.render(sess, cfg)
                         acc[it] = a
                     end
                 end
-                for _, ln in ipairs(sess.drops.lost) do
-                    local it = lost_name(ln);
-                    local a = acc[it] or { q = 0, e = 0, l = 0 };
-                    a.l = a.l + 1;
-                    acc[it] = a
+                local lost_list = sess.drops.lost or {}
+                for _, ln in ipairs(lost_list) do
+                    local it = lost_name(ln)
+                    if it ~= '' then
+                        local a = acc[it] or { q = 0, e = 0, l = 0 }
+                        a.l = a.l + 1
+                        acc[it] = a
+                    end
                 end
                 for _, k in ipairs(keys(acc)) do
                     local a = acc[k]
@@ -883,12 +979,16 @@ function ui.render(sess, cfg)
                 imgui.TableSetupColumn('Lost')
                 imgui.TableHeadersRow()
 
-                local lost = {}
-                for _, ln in ipairs(sess.drops.lost or {}) do
-                    local it = lost_name(ln)
-                    lost[it] = (lost[it] or 0) + 1
+                local lost = sess.drops.lost_total or {}
+                if not sess.drops.lost_total then
+                    lost = {}
+                    for _, ln in ipairs(sess.drops.lost or {}) do
+                        local it = lost_name(ln)
+                        if it ~= '' then
+                            lost[it] = (lost[it] or 0) + 1
+                        end
+                    end
                 end
-
                 for _, cur in ipairs(keys(sess.drops.currency_total or {})) do
                     if is_cur(cur) then
                         local qty = sess.drops.currency_total[cur] or 0
@@ -917,7 +1017,13 @@ function ui.render(sess, cfg)
             ---------------------------------------------------------------- PLAYERS
             -- ---------------------------------------------------------------- PLAYERS
             if imgui.BeginTabItem('Players') then
-                local plist = keys(sess.drops.by_player or {})
+                local plist = {}
+                for _, p in ipairs(keys(sess.drops.by_player or {})) do
+                    if is_valid_player_name(p) then
+                        plist[#plist + 1] = p
+                    end
+                end
+
 
                 -- Toggle currency-only + combo
                 do
@@ -1062,11 +1168,15 @@ function ui.render(sess, cfg)
 
 
             ---------------------------------------------------------------- ITEMS
-            -- ---------------------------------------------------------------- ITEMS
             if imgui.BeginTabItem('Items') then
-                local plist = keys(sess.drops.by_player or {})
-                local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
+                local plist = {}
+                for _, p in ipairs(keys(sess.drops.by_player or {})) do
+                    if is_valid_player_name(p) then
+                        plist[#plist + 1] = p
+                    end
+                end
 
+                local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
                 local printed_any = false
 
                 for _, pl in ipairs(plist) do
@@ -1116,22 +1226,30 @@ function ui.render(sess, cfg)
             end
 
 
+
             ---------------------------------------------------------------- LOST
             if imgui.BeginTabItem('Lost') then
                 imgui.BeginTable('tbl_lost', 2, TF_BORDER)
                 imgui.TableSetupColumn('Time');
                 imgui.TableSetupColumn('Item')
                 imgui.TableHeadersRow()
-                for _, ln in ipairs(sess.drops.lost) do
-                    local tm, it = ln:match('^(%d%d:%d%d:%d%d)%s+(.+)%s+lost')
-                    local name = it or ln
+                for _, ln in ipairs(sess.drops.lost or {}) do
+                    local name = lost_name(ln)
+                    local tm = '--'
+                    if type(ln) == 'table' and ln.time then
+                        tm = os.date('%H:%M:%S', ln.time)
+                    else
+                        tm = tostring(ln):match('^(%d%d:%d%d:%d%d)') or '--'
+                    end
+
                     local col = is_cur(name) and (is_hundo(name) and C.HUNDO or C.CUR) or C.ITEM
                     imgui.TableNextRow()
-                    imgui.TableSetColumnIndex(0);
-                    imgui.Text(tm or '--')
-                    imgui.TableSetColumnIndex(1);
+                    imgui.TableSetColumnIndex(0)
+                    imgui.Text(tm)
+                    imgui.TableSetColumnIndex(1)
                     imgui.TextColored(col, title(name))
                 end
+
                 imgui.EndTable();
                 imgui.EndTabItem()
             end
@@ -1193,18 +1311,46 @@ function ui.render(sess, cfg)
                         return current
                     end
 
+
                     -- Defaults for Start/End
                     if sess.split.start_h == nil or sess.split.start_m == nil then
                         local sh, sm = ts_to_hm(sess.start_time or os.time())
                         sess.split.start_h, sess.split.start_m = sh, sm
                     end
+
                     if sess.split.end_h == nil or sess.split.end_m == nil then
+                        -- Auto end (default). Will be disabled if user edits End.
+                        sess.split._auto_end = true
+                        sess.split._auto_end_zone = tonumber(sess.zone_id) or 0
+
                         local sh = tonumber(sess.split.start_h) or 0
                         local sm = tonumber(sess.split.start_m) or 0
-                        local end_minutes = hm_to_minutes(sh, sm) + 240
+                        local end_minutes = hm_to_minutes(sh, sm) + default_event_minutes(sess)
                         end_minutes = end_minutes % (24 * 60)
                         sess.split.end_h = math.floor(end_minutes / 60)
                         sess.split.end_m = end_minutes - sess.split.end_h * 60
+                    end
+
+                    -- Zone id may arrive late. If End is still auto, recompute once when zone becomes valid/changes.
+                    do
+                        local auto = (sess.split._auto_end == true)
+                        local zid = tonumber(sess.zone_id) or 0
+                        local lastz = tonumber(sess.split._auto_end_zone) or 0
+
+                        if auto and zid ~= 0 and zid ~= lastz then
+                            sess.split._auto_end_zone = zid
+
+                            local sh = tonumber(sess.split.start_h) or 0
+                            local sm = tonumber(sess.split.start_m) or 0
+                            local end_minutes = hm_to_minutes(sh, sm) + default_event_minutes(sess)
+                            end_minutes = end_minutes % (24 * 60)
+                            sess.split.end_h = math.floor(end_minutes / 60)
+                            sess.split.end_m = end_minutes - sess.split.end_h * 60
+
+                            if store and sess and sess.is_event then
+                                store.save(sess)
+                            end
+                        end
                     end
 
                     -- Start / End UI
@@ -1263,8 +1409,9 @@ function ui.render(sess, cfg)
                         local input_w = 110
                         local total_w = lbl_w + spacing2 + input_w
 
+                        local sb = style2.ScrollbarSize or 0
                         imgui.SameLine()
-                        imgui.SetCursorPosX(win_w2 - total_w - pad2)
+                        imgui.SetCursorPosX(win_w2 - sb - total_w - pad2 - 4)
 
                         imgui.TextUnformatted(lbl_gp)
                         imgui.SameLine()
@@ -1293,6 +1440,11 @@ function ui.render(sess, cfg)
                         sess.split.start_h, sess.split.start_m = sh, sm
                         sess.split.end_h, sess.split.end_m = eh, em
 
+                        -- If user edits End, disable auto end for this session (prevents late zone_id from overriding).
+                        if (eh ~= old_eh) or (em ~= old_em) then
+                            sess.split._auto_end = false
+                        end
+
                         local changed =
                         (sh ~= old_sh) or (sm ~= old_sm) or
                                 (eh ~= old_eh) or (em ~= old_em) or
@@ -1312,23 +1464,31 @@ function ui.render(sess, cfg)
 
 
 
+
                     -- Build player list
                     local names_set = {}
                     if sess.drops and sess.drops.by_player then
                         for name, _ in pairs(sess.drops.by_player) do
-                            names_set[name] = true
+                            if is_valid_player_name(name) then
+                                names_set[name] = true
+                            end
                         end
                     end
                     if sess.management then
                         for name, _ in pairs(sess.management) do
-                            names_set[name] = true
+                            if is_valid_player_name(name) then
+                                names_set[name] = true
+                            end
                         end
                     end
                     if sess.participants then
                         for name, _ in pairs(sess.participants) do
-                            names_set[name] = true
+                            if is_valid_player_name(name) then
+                                names_set[name] = true
+                            end
                         end
                     end
+
 
                     local plist = {}
                     for name, _ in pairs(names_set) do
@@ -1459,9 +1619,81 @@ function ui.render(sess, cfg)
 
                     imgui.Separator()
 
+                    -- Manual currency (units)
+                    sess.split.manual_units = sess.split.manual_units or {}
+
+                    -- Drops total (units) (read-only)
+                    local detected_units = {}
+                    for name, qty in pairs(sess.drops.currency_total or {}) do
+                        if is_cur(name) then
+                            local units = to_units(name, qty)
+                            local base = base_cur(name)
+                            detected_units[base] = (detected_units[base] or 0) + units
+                        end
+                    end
+
+                    do
+                        imgui.TextUnformatted('Manual currency (units)')
+                        imgui.SameLine()
+                        if imgui.SmallButton('Reset manual') then
+                            sess.split.manual_units = {}
+                            if store and sess and sess.is_event then
+                                store.save(sess)
+                            end
+                        end
+
+                        local bases_known = { 'Bronzepiece', 'Whiteshell', 'Byne Bill' }
+
+                        if imgui.BeginTable('tbl_manual_currency', 4, TF_BORDER) then
+                            imgui.TableSetupColumn('Currency')
+                            imgui.TableSetupColumn('Drops total')
+                            imgui.TableSetupColumn('Add')
+                            imgui.TableSetupColumn('Total')
+                            imgui.TableHeadersRow()
+
+                            for _, base in ipairs(bases_known) do
+                                local drops_total = tonumber(detected_units[base]) or 0
+
+                                local addv = tonumber(sess.split.manual_units[base]) or 0
+                                if addv < 0 then addv = 0 end
+
+                                local totalv = drops_total + addv
+
+                                imgui.TableNextRow()
+                                imgui.TableSetColumnIndex(0)
+                                imgui.TextColored(C.CUR, display_cur(base))
+
+                                imgui.TableSetColumnIndex(1)
+                                imgui.TextColored(C.QTY, tostring(drops_total))
+
+                                imgui.TableSetColumnIndex(2)
+                                imgui.PushItemWidth(140)
+                                local v = { addv }
+                                if imgui.InputInt('##man_' .. base, v) then
+                                    local nv = tonumber(v[1]) or 0
+                                    if nv < 0 then nv = 0 end
+                                    sess.split.manual_units[base] = nv
+                                    if store and sess and sess.is_event then
+                                        store.save(sess)
+                                    end
+                                end
+                                imgui.PopItemWidth()
+
+                                imgui.TableSetColumnIndex(3)
+                                imgui.TextColored(C.QTY, tostring(totalv))
+                            end
+
+                            imgui.EndTable()
+                        end
+
+                        imgui.Separator()
+                    end
+
+
                     -- Compute split (time-weighted, only included players)
                     local glass_price = tonumber(sess.split and sess.split.glass_price) or 1000000
                     if glass_price < 0 then glass_price = 0 end
+
                     local agg = {}
                     for name, qty in pairs(sess.drops.currency_total or {}) do
                         if is_cur(name) then
@@ -1470,7 +1702,16 @@ function ui.render(sess, cfg)
                             agg[base] = (agg[base] or 0) + units
                         end
                     end
+
+                    for base, add in pairs(sess.split.manual_units or {}) do
+                        local v = tonumber(add) or 0
+                        if v > 0 then
+                            agg[base] = (agg[base] or 0) + v
+                        end
+                    end
+
                     local bases = keys(agg)
+
 
                     local total_weight = 0
                     for _, pl in ipairs(plist) do

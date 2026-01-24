@@ -98,10 +98,24 @@ function store.save(sess)
     if not f then
         return false
     end
+
+    -- Do not persist live pool cache (recomputed from memory).
+    local pool_live_bak = nil
+    if sess.drops and sess.drops.pool_live then
+        pool_live_bak = sess.drops.pool_live
+        sess.drops.pool_live = nil
+    end
+
     f:write('return ' .. dump(sess) .. '\n')
     f:close()
+
+    if pool_live_bak then
+        sess.drops.pool_live = pool_live_bak
+    end
+
     return true
 end
+
 
 function store.load(zid)
     local ent = GetPlayerEntity()

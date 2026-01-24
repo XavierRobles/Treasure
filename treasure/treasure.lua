@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.0.3
+-- Versión: 1.0.5
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.4'
+addon.version = '1.0.5'
 
 require('common')
 local settings = require('settings')
@@ -52,6 +52,31 @@ local DOT_SMALL    = string.char(0x81, 0x45) -- ・
 ------------------------------------------------------------------ estado
 local session, idle_session, lastPool, lastSave = nil, nil, 0, 0
 local cfg, lastPrefSave = nil, 0
+
+local function ensure_dynamis_timer(sess, zid)
+    if not sess then
+        return
+    end
+
+    sess.dynamis_timer = sess.dynamis_timer or {
+        expel_at = nil,
+        pending_ext = 0,
+        fallback_end_at = nil,
+        desynced = false,
+        last_sync_at = nil,
+    }
+
+    local start = tonumber(sess.start_time) or os.time()
+    sess.start_time = start
+
+    local max_min = core.dynamis_max_minutes(zid or sess.zone_id)
+    sess.dynamis_timer.fallback_end_at = start + (max_min * 60)
+
+    if sess.dynamis_timer.expel_at and sess.dynamis_timer.expel_at > sess.dynamis_timer.fallback_end_at then
+        sess.dynamis_timer.fallback_end_at = sess.dynamis_timer.expel_at
+    end
+end
+
 
 ------------------------------------------------------------------ party chat queue (rate limit)
 local party_chat_queue = {}
@@ -545,6 +570,7 @@ ashita.events.register('d3d_present', 'treasure_present', function()
                 -- Reanudamos una sesión guardada
                 ----------------------------------------------------------------
                 session = saved
+                ensure_dynamis_timer(session, zid)
                 session.ended = false
                 session.is_event = true
                 session.management = session.management or {}
@@ -564,6 +590,7 @@ ashita.events.register('d3d_present', 'treasure_present', function()
                 end
 
                 session = new_session
+                ensure_dynamis_timer(session, zid)
                 session.is_event = true
                 session.zone_id = zid
                 session.start_time = now
