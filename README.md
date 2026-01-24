@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.3  
+**Version:** 1.0.4  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -19,7 +19,69 @@
 
 ---
 
-## 📌 Changelog
+## 📌 Changelog
+### v1.0.4 (English)
+
+- Introduced a **new time-based split system** for Dynamis currency distribution.
+- Added **Start / End time controls** for the event, with automatic duration calculation.
+- Split duration is now calculated in **minutes** and used as the base for all distributions.
+- Added a configurable **Glass price field** (default: 1,000,000) that affects all split calculations.
+- Each player can now have a **custom participation time**, allowing partial attendance.
+- Currency and glass cost are **distributed proportionally to time played**.
+- Added per-player management flags:
+  - **Participated** (exclude helpers or late joins).
+  - **Glass paid**.
+  - **Currency delivered**.
+- Added performance improvements:
+  - Reduced redundant UI recalculations in compact mode.
+  - Avoided unnecessary renders / table headers when a player has no relevant data.
+  - Smoothed window resizing to prevent micro-jitter.
+- Added advanced **currency reporting system** via `/tr` commands:
+  - `/tr c`, `/tr cur`, `/tr currency` → report **total currency** to party chat.
+  - `/tr who` → report **currency obtained per player**.
+- Currency values are **automatically normalized**, converting all 100-value items into base units.
+- Party chat output is **rate-limited and queued** to prevent failed messages or spam.
+- Party chat reports now use **in-game icon tokens and visual separators** instead of plain text.
+- Improved chat formatting for totals and per-player reports.
+- Fixed UI behavior so **compact and full modes** maintain independent layouts.
+- The names of **all Dynamis Dreamlands zones** are now displayed correctly.
+- Improved participant detection to ensure **only players actually involved in the Dynamis run** are tracked for event management and splits.
+- Historical session files are now shown **sorted by date**, newest first.
+- **Backwards compatible** with session files created before this update.
+
+---
+
+### v1.0.4 (Español)
+
+- Introducido un **nuevo sistema de reparto (split) basado en tiempo** para la moneda de Dynamis.
+- Añadidos controles de **hora de inicio y fin** del evento, con cálculo automático de duración.
+- La duración del evento se calcula en **minutos** y se usa como base para todos los repartos.
+- Añadido un campo configurable de **precio del Glass** (por defecto: 1.000.000).
+- Cada jugador puede tener ahora un **tiempo de participación personalizado**, permitiendo asistencias parciales.
+- La moneda y el coste del glass se **reparten de forma proporcional al tiempo jugado**.
+- Añadidas opciones de gestión por jugador:
+  - **Participó** (para excluir helpers o gente que no cuenta).
+  - **Glass pagado**.
+  - **Moneda entregada**.
+- Mejoras de rendimiento:
+  - Menos recalculados redundantes del UI en modo compacto.
+  - Se evitan renders/cabeceras/tablas innecesarias cuando un jugador no tiene datos relevantes.
+  - Ajuste de altura más suave para evitar micro-“temblores” al redimensionar.
+- Añadido un **sistema avanzado de reporte de moneda** mediante comandos `/tr`:
+  - `/tr c`, `/tr cur`, `/tr currency` → muestra el **total de moneda** en party.
+  - `/tr who` → muestra la **moneda obtenida por cada jugador**.
+- Las monedas de valor 100 se **normalizan automáticamente** a su moneda base.
+- El envío de mensajes al chat de party está **limitado y encolado** para evitar errores o spam.
+- Los mensajes de moneda usan ahora **iconos y separadores gráficos del propio juego**.
+- Formato del chat mejorado para totales y reportes por jugador.
+- Corregido el comportamiento del UI para que los modos **compacto y completo** mantengan layouts independientes.
+- El nombre de **todas las Dynamis Dreamlands** ahora se muestra correctamente.
+- Detección de participantes reforzada para asegurar que **solo los jugadores realmente implicados en la run** se gestionan para el evento y el split.
+- Los archivos históricos ahora se muestran **ordenados por fecha**, del más reciente al más antiguo.
+- **Compatible con archivos de sesión anteriores** a esta actualización.
+
+
+## Changelog
 ### v1.0.3 (English)
 
 - Items in the treasure‑pool table are now sorted by **time left** (earliest → latest).  
