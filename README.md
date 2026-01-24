@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.4  
+**Version:** 1.0.5  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -16,6 +16,33 @@
 >
 > Treasure es completamente transparente en su funcionamiento: actúa solo en el cliente, procesando la información que ya aparece en el chat del juego.  
 > **No** modifica archivos del juego, **no** envía datos al servidor y consume recursos mínimos, operando únicamente con los datos locales disponibles.
+
+---
+
+## 📌 Changelog
+### v1.0.5 (English)
+
+- Fixed an issue where the **Glass price** button could be hidden when the scrollbar appeared.
+- Fixed an issue where lost items were assigned to a ghost user (**"To"**), incorrectly counting as an extra player.
+- Fixed the **"All"** tab label duplication when an item was lost.
+- Added an option to manually assign **extra currencies**, to compensate losses caused by re-entry or disconnects.
+- Updated default event durations to match Dynamis formats:
+  - **3h** (Cities)
+  - **4h** (North)
+  - **2h** (Dreams)
+- Added an **event countdown timer** to show the remaining time.
+
+### v1.0.5 (Español)
+
+- Corregido un problema por el que el botón del **precio del Glass** podía quedar oculto al aparecer la barra de desplazamiento.
+- Corregido un error por el que, al perderse un ítem, se asignaba a un usuario fantasma (**"To"**), contándose además como un jugador adicional.
+- Corregida la duplicación del nombre de la pestaña **"All"** cuando se perdía un ítem.
+- Añadida una opción para asignar **moneda extra** manualmente, para compensar pérdidas por reentrada o desconexión.
+- Ajustadas las duraciones por defecto según Dynamis:
+  - **3h** (Cities)
+  - **4h** (North)
+  - **2h** (Dreams)
+- Añadida una **cuenta atrás** del evento para mostrar el tiempo restante.
 
 ---
 
