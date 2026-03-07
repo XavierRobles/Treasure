@@ -3,6 +3,7 @@
 ---------------------------------------------------------------------------
 
 require('common')
+local timeutil = require('timeutil')
 
 local store = {}
 local res = AshitaCore:GetResourceManager()
@@ -10,6 +11,20 @@ local root = ('%s\\config\\addons\\treasure\\sessions\\')
         :format(AshitaCore:GetInstallPath())
 if not ashita.fs.exists(root) then
     ashita.fs.create_dir(root)
+end
+
+local SAVE_MIN_INTERVAL = 0.5
+local LIST_CACHE_TTL = 2.0
+
+local save_gate = setmetatable({}, { __mode = 'k' })
+local list_cache = {
+    at = 0,
+    files = nil,
+}
+
+local function invalidate_list_cache()
+    list_cache.at = 0
+    list_cache.files = nil
 end
 
 local zone_tag = {
@@ -75,7 +90,31 @@ local function dump(tbl, ind)
 end
 
 -- Saves a session table to disk.
-function store.save(sess)
+-- opts:
+--   true / { force = true } => bypass debounce guard.
+--   { min_interval = <seconds> } => custom debounce interval.
+function store.save(sess, opts)
+    if type(sess) ~= 'table' then
+        return false
+    end
+
+    local force = false
+    local min_interval = SAVE_MIN_INTERVAL
+    if opts == true then
+        force = true
+    elseif type(opts) == 'table' then
+        force = opts.force == true
+        if tonumber(opts.min_interval) then
+            min_interval = math.max(0, tonumber(opts.min_interval))
+        end
+    end
+
+    local now = timeutil.now()
+    local last = save_gate[sess] or 0
+    if (not force) and ((now - last) < min_interval) then
+        return true
+    end
+
     -- Get the current character name.
     local ent = GetPlayerEntity()
     local pname = (ent and ent.Name) or (sess and sess.player_name) or "UNKNOWN"
@@ -112,6 +151,9 @@ function store.save(sess)
     if pool_live_bak then
         sess.drops.pool_live = pool_live_bak
     end
+
+    save_gate[sess] = now
+    invalidate_list_cache()
 
     return true
 end
@@ -158,6 +200,15 @@ end
 
 -- Returns a list of saved session filenames.
 function store.list_sessions()
+    local now = timeutil.now()
+    if list_cache.files and (now - (list_cache.at or 0) <= LIST_CACHE_TTL) then
+        local copy = {}
+        for i = 1, #list_cache.files do
+            copy[i] = list_cache.files[i]
+        end
+        return copy
+    end
+
     local items = {}
     local sep = package.config:sub(1, 1)
     local cmd
@@ -197,6 +248,13 @@ function store.list_sessions()
     for i = 1, #items do
         files[#files + 1] = items[i].name
     end
+
+    list_cache.files = {}
+    for i = 1, #files do
+        list_cache.files[i] = files[i]
+    end
+    list_cache.at = now
+
     return files
 end
 

@@ -9,6 +9,7 @@ local SETTINGS_OK, settings = pcall(require, 'settings')   -- settings.lua
 local THEMES_OK, ADDON_THEMES = pcall(require, 'ev_themes')  -- palette file
 local store = require('store')
 local core = require('core')
+local timeutil = require('timeutil')
 -------------------------------------------------------------------------------
 
 --------------------------------------------------------------------
@@ -452,7 +453,7 @@ local function draw_treasure_table (sess, C, cfg)
         list[#list + 1] = {
             slot = slot,
             info = info,
-            rest = math.max(0, math.floor(info.expire - os.clock()))
+            rest = math.max(0, math.floor(info.expire - timeutil.now()))
         }
     end
     table.sort(list, function(a, b)

@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.5  
+**Version:** 0.6.0  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,24 @@
 ---
 
 ## 📌 Changelog
+### v0.6.0 (English)
+
+- Fixed an issue where a false **"continues..."** message could appear when leaving Dynamis.
+- Improved timer stability for the treasure-pool countdown, party report queue, and periodic updates.
+- Improved saving behavior to reduce unnecessary disk writes while keeping critical saves on zone-out and timeout.
+- Improved History list responsiveness by reducing repeated folder scans.
+- Restored `/tr` fallback behavior so unknown subcommands toggle the UI.
+
+### v0.6.0 (Español)
+
+- Corregido un problema por el que podia aparecer un mensaje falso de **"continues..."** al salir de Dynamis.
+- Mejorada la estabilidad de los temporizadores del treasure-pool, la cola de reportes de party y las actualizaciones periodicas.
+- Mejorado el sistema de guardado para reducir escrituras innecesarias a disco, manteniendo guardados criticos al salir de zona y en timeout.
+- Mejorada la fluidez del historial evitando escaneos repetidos de la carpeta de sesiones.
+- Restaurado el fallback de `/tr` para que los subcomandos desconocidos vuelvan a alternar la UI.
+
+---
+
 ### v1.0.5 (English)
 
 - Fixed an issue where the **Glass price** button could be hidden when the scrollbar appeared.

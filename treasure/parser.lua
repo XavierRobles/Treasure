@@ -3,6 +3,7 @@
 ---------------------------------------------------------------------------
 local core = require('core')
 local store = require('store')
+local timeutil = require('timeutil')
 local parser = {}
 
 ------------------------ sesión
@@ -288,7 +289,7 @@ function parser.update_treasure_pool(s)
                 key = string.format('s:%d:%d', slot, t.ItemId)
             end
 
-            parser._exp[key] = parser._exp[key] or (os.clock() + 299)
+            parser._exp[key] = parser._exp[key] or (timeutil.now() + 299)
             s.drops.pool_live[slot] = {
                 name = name,
                 lot = t.WinningLot,

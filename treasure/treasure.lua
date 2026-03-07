@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.0.5
+-- Versión: 0.6.0
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.5'
+addon.version = '0.6.0'
 
 require('common')
 local settings = require('settings')
@@ -18,6 +18,7 @@ local core = require('core')
 local parser = require('parser')
 local store = require('store')
 local ui = require('ui')
+local timeutil = require('timeutil')
 local fs = ashita.fs
 local chat = require('chat')
 
@@ -94,13 +95,14 @@ local function process_party_chat_queue()
     if #party_chat_queue == 0 then
         return
     end
-    if (os.clock() - last_party_chat_sent) < PARTY_CHAT_DELAY then
+    local now = timeutil.now()
+    if (now - last_party_chat_sent) < PARTY_CHAT_DELAY then
         return
     end
 
     local msg = table.remove(party_chat_queue, 1)
     AshitaCore:GetChatManager():QueueCommand(1, '/p ' .. msg)
-    last_party_chat_sent = os.clock()
+    last_party_chat_sent = now
 end
 
 
@@ -514,6 +516,7 @@ ashita.events.register('command', 'treasure_cmd', function(e)
     if not cfg then
         cfg = ensure_settings()
     end
+    cfg.visible = not cfg.visible
     save_character_settings(cfg)
 end)
 
@@ -531,8 +534,15 @@ ashita.events.register('packet_in', 'login_detector', function(e)
                     'Configuración cargada para «' .. nm .. '».')))
         end
     elseif e.id == 0x00B then
-        -- lobby
-        reset_state_for_new_char()
+        -- lobby / transient zone packet: only reset on actual lobby-like state.
+        local ent = GetPlayerEntity()
+        local nm = ent and ent.Name
+        local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
+        local no_world = (zid == 0 or zid == 0xFFFF)
+        local no_name = (not nm or nm == '' or nm == 'UNKNOWN')
+        if no_world and no_name then
+            reset_state_for_new_char()
+        end
     end
 end)
 
@@ -554,12 +564,14 @@ ashita.events.register('d3d_present', 'treasure_present', function()
             cfg = ensure_settings()
         end
     end
+    local now_tick = timeutil.now()
 
     ---------------------------------------------------------------- session
     local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
     local zoneName = rm:GetString('zones.names', zid) or ('Zone ' .. zid)
+    local in_dynamis = core.is_dynamis(zid)
 
-    if core.is_dynamis(zid) then
+    if in_dynamis then
         -- Entramos en Dynamis: restaurar o crear sesión
         if not session then
             local now = os.time()
@@ -612,7 +624,7 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         -- salimos de Dynamis (lock the session so it can't be modified anymore)
         if session and session.is_event then
             session.ended = true
-            store.save(session)
+            store.save(session, { force = true })
         end
         session = nil
     end
@@ -627,17 +639,17 @@ ashita.events.register('d3d_present', 'treasure_present', function()
     end
 
     -- Actualización del pool vivo cada 0,5 s.
-    if (os.clock() - lastPool) > 0.5 then
+    if (now_tick - lastPool) > 0.5 then
         if draw_session == session or draw_session == idle_session then
             parser.update_treasure_pool(draw_session)
         end
-        lastPool = os.clock()
+        lastPool = now_tick
     end
 
     -- Actualiza la lista de party/alianza aproximadamente cada 2 segundos.
-    if (os.clock() - lastPartyUpdate) > 2.0 then
+    if (now_tick - lastPartyUpdate) > 2.0 then
         update_party_members();
-        lastPartyUpdate = os.clock()
+        lastPartyUpdate = now_tick
     end
 
     process_party_chat_queue()
@@ -647,20 +659,20 @@ ashita.events.register('d3d_present', 'treasure_present', function()
     end
 
     if session and session.is_event and not ui.history_session then
-        if (os.clock() - lastSave) > 30 then
+        if (now_tick - lastSave) > 30 then
             store.save(session);
-            lastSave = os.clock()
+            lastSave = now_tick
         end
         if session.paused and (os.time() - session.paused) > (cfg.timeout or 30) * 60 then
-            store.save(session);
+            store.save(session, { force = true });
             session = nil
         end
     end
 
-    if ui.compact ~= (cfg.default_mode ~= 'full') and (os.clock() - lastPrefSave) > 1 then
+    if ui.compact ~= (cfg.default_mode ~= 'full') and (now_tick - lastPrefSave) > 1 then
         cfg.default_mode = ui.compact and 'compact' or 'full'
         save_character_settings(cfg);
-        lastPrefSave = os.clock()
+        lastPrefSave = now_tick
     end
 end)
 
@@ -668,7 +680,7 @@ end)
 ashita.events.register('zone_change', 'treasure_zone', function()
     if session and session.is_event then
         session.ended = true
-        store.save(session)
+        store.save(session, { force = true })
     end
     session = nil
 end)
