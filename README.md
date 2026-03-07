@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 0.6.0  
+**Version:** 1.0.6  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,7 +20,15 @@
 ---
 
 ## 📌 Changelog
-### v0.6.0 (English)
+### v1.0.6 (English)
+
+- Fixed compact/full resizing so the window no longer grows for no reason when the pool is empty.
+- Window size and column widths now stay exactly as the user left them.
+- Improved per-character settings loading to keep layouts stable between characters.
+- Added a **Personal Steal (THF)** block in the **Currency** tab, showing only your own steals.
+- Personal Steal now shows attempts, success, failed, and success rate.
+- Stolen currency now tracks single currency only (**Tukuku / Ordelle / Byne**).
+- Improved live pool ordering to avoid items swapping positions while the timer updates.
 
 - Fixed an issue where a false **"continues..."** message could appear when leaving Dynamis.
 - Improved timer stability for the treasure-pool countdown, party report queue, and periodic updates.
@@ -28,7 +36,15 @@
 - Improved History list responsiveness by reducing repeated folder scans.
 - Restored `/tr` fallback behavior so unknown subcommands toggle the UI.
 
-### v0.6.0 (Español)
+### v1.0.6 (Español)
+
+- Corregido el redimensionado entre modo compacto/completo para que la ventana no crezca sin motivo cuando el pool está vacío.
+- El tamaño de ventana y los anchos de columna ahora se guardan exactamente como los deja el usuario.
+- Mejorada la carga de ajustes por personaje para mantener el layout estable entre chars.
+- Añadido el bloque **Personal Steal (THF)** en la pestaña **Currency**, mostrando solo los steals del jugador.
+- Personal Steal muestra intentos, aciertos, fallos y porcentaje de éxito.
+- La moneda robada solo cuenta moneda simple (**Tukuku / Ordelle / Byne**).
+- Mejorado el orden del pool en vivo para evitar que los ítems cambien de posición mientras actualiza el tiempo.
 
 - Corregido un problema por el que podia aparecer un mensaje falso de **"continues..."** al salir de Dynamis.
 - Mejorada la estabilidad de los temporizadores del treasure-pool, la cola de reportes de party y las actualizaciones periodicas.
@@ -64,7 +80,6 @@
 
 ---
 
-## 📌 Changelog
 ### v1.0.4 (English)
 
 - Introduced a **new time-based split system** for Dynamis currency distribution.
@@ -126,7 +141,6 @@
 - **Compatible con archivos de sesión anteriores** a esta actualización.
 
 
-## Changelog
 ### v1.0.3 (English)
 
 - Items in the treasure‑pool table are now sorted by **time left** (earliest → latest).  
@@ -285,7 +299,6 @@ Todo se almacena en un único archivo de sesión por zona y fecha, listo para re
     <td><img src="https://github.com/user-attachments/assets/b815ae27-6f85-4026-a0b8-29a9f7b06ae8"  width="320" alt="Currency delivered check"/></td>
   </tr>
 </table>
-
 
 
 

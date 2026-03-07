@@ -112,6 +112,33 @@ local function _get_xy(vec)
     return tonumber(sx) or 0, tonumber(sy) or 0
 end
 
+local DEFAULT_TRE_COLS = {
+    compact = { 250, 150, 60, 60 },
+    full = { 300, 200, 60, 60 },
+}
+
+local function copy_cols(src)
+    return { src[1], src[2], src[3], src[4] }
+end
+
+local function sanitize_tre_cols(cols, mode)
+    local fallback = copy_cols(DEFAULT_TRE_COLS[mode] or DEFAULT_TRE_COLS.full)
+    if type(cols) ~= 'table' then
+        return fallback
+    end
+
+    local out = {}
+    for i = 1, 4 do
+        local v = tonumber(cols[i])
+        if v == nil then
+            v = fallback[i]
+        end
+        out[i] = v
+    end
+
+    return out
+end
+
 -- Guarda posición, tamaño y anchos de columnas --------------------
 local function save_layout(cfg, mode)
     cfg.layout = cfg.layout or {}
@@ -126,8 +153,9 @@ local function save_layout(cfg, mode)
     local wx, wy = imgui.GetWindowSize()
     cfg.layout[mode].window = { x = px, y = py, w = wx, h = wy }
 
-    if cfg.tre_col_w then
-        cfg.layout[mode].cols = { table.unpack(cfg.tre_col_w) }
+    -- Guard against cross-mode overwrites when toggling.
+    if cfg.tre_col_w and cfg._tre_cols_mode == mode then
+        cfg.layout[mode].cols = sanitize_tre_cols(cfg.tre_col_w, mode)
     end
 
     persist(cfg) -- << escribe settings.xml
@@ -136,6 +164,9 @@ end
 local function load_layout(cfg, mode)
     local prof = cfg.layout and cfg.layout[mode]
     if not prof then
+        cfg.tre_col_w = sanitize_tre_cols(nil, mode)
+        cfg._tre_init = false
+        cfg._tre_cols_mode = mode
         return
     end
 
@@ -143,10 +174,9 @@ local function load_layout(cfg, mode)
         imgui.SetNextWindowPos({ prof.window.x, prof.window.y })
         imgui.SetNextWindowSize({ prof.window.w, prof.window.h })
     end
-    if prof.cols then
-        cfg.tre_col_w = { table.unpack(prof.cols) }
-        cfg._tre_init = false
-    end
+    cfg.tre_col_w = sanitize_tre_cols(prof.cols, mode)
+    cfg._tre_init = false
+    cfg._tre_cols_mode = mode
 end
 
 
@@ -441,7 +471,15 @@ local function draw_treasure_table (sess, C, cfg)
     end
 
     --Anchos de columnas persistentes
-    cfg.tre_col_w = cfg.tre_col_w or { 250, 150, 60, 60 }
+    local mode = ui.compact and 'compact' or 'full'
+    if cfg._tre_cols_mode ~= mode then
+        local prof_cols = cfg.layout and cfg.layout[mode] and cfg.layout[mode].cols
+        cfg.tre_col_w = sanitize_tre_cols(prof_cols, mode)
+        cfg._tre_init = false
+        cfg._tre_cols_mode = mode
+    else
+        cfg.tre_col_w = sanitize_tre_cols(cfg.tre_col_w, mode)
+    end
     cfg._tre_init = cfg._tre_init or false
 
     ----------------------------------------------------------------
@@ -457,6 +495,18 @@ local function draw_treasure_table (sess, C, cfg)
         }
     end
     table.sort(list, function(a, b)
+        local adt = tonumber((a.info and a.info.drop_time) or 0) or 0
+        local bdt = tonumber((b.info and b.info.drop_time) or 0) or 0
+        if adt ~= bdt then
+            return adt < bdt
+        end
+
+        local aid = tonumber((a.info and a.info.item_id) or 0) or 0
+        local bid = tonumber((b.info and b.info.item_id) or 0) or 0
+        if aid ~= bid then
+            return aid < bid
+        end
+
         if a.rest ~= b.rest then
             return a.rest < b.rest
         end
@@ -465,27 +515,30 @@ local function draw_treasure_table (sess, C, cfg)
 
 
     ----------------------------------------------------------------
-    -- Altura de la región scroll (modo compacto = altura dinámica)
+    -- Scroll-region solo en compacto
     ----------------------------------------------------------------
-    local child_h = 200
-    if ui.compact then
+    local using_child = ui.compact
+    local sv = nil
+
+    if using_child then
         local row_h = imgui.GetTextLineHeight() + imgui.GetStyle().FramePadding.y * 2
         local want_h = row_h * (count + 1)
+        if count <= 4 then
+            want_h = want_h + (row_h * 1.0)
+        else
+            want_h = want_h + (row_h * 0.5)
+        end
         local min_child = row_h * 2
         local max_child = row_h * 12
-        child_h = math.min(max_child, math.max(min_child, want_h))
-    end
+        local child_h = math.min(max_child, math.max(min_child, want_h))
 
-    ----------------------------------------------------------------
-    -- Scroll‑region y columnas
-    ----------------------------------------------------------------
-    imgui.PushStyleColor(3, { 0, 0, 0, 0 })
-    local sv = S and S('ScrollbarSize')
-    if sv and sv ~= 0 then
-        imgui.PushStyleVar(sv, 0)
+        imgui.PushStyleColor(3, { 0, 0, 0, 0 })
+        sv = S and S('ScrollbarSize')
+        if sv and sv ~= 0 then
+            imgui.PushStyleVar(sv, 0)
+        end
+        imgui.BeginChild('treasure_scroll_region', { 0, child_h }, false, WF('NoScrollbar'))
     end
-
-    imgui.BeginChild('treasure_scroll_region', { 0, child_h }, false, WF('NoScrollbar'))
 
     imgui.Columns(4, 'treasure_columns', true)
     if not cfg._tre_init then
@@ -542,8 +595,10 @@ local function draw_treasure_table (sess, C, cfg)
                 cfg.tre_col_w[i], changed = w, true
             end
         end
+
         if changed then
-            local mode = ui.compact and 'compact' or 'full'
+            cfg.tre_col_w = sanitize_tre_cols(cfg.tre_col_w, mode)
+            cfg._tre_cols_mode = mode
             cfg.layout = cfg.layout or {}
             cfg.layout[mode] = cfg.layout[mode] or {}
             cfg.layout[mode].cols = { table.unpack(cfg.tre_col_w) }
@@ -552,11 +607,14 @@ local function draw_treasure_table (sess, C, cfg)
     end
 
     imgui.Columns(1)
-    imgui.EndChild()
-    if sv and sv ~= 0 then
-        imgui.PopStyleVar()
+
+    if using_child then
+        imgui.EndChild()
+        if sv and sv ~= 0 then
+            imgui.PopStyleVar()
+        end
+        imgui.PopStyleColor()
     end
-    imgui.PopStyleColor()
 end
 
 local function draw_settings_panel(cfg, C)
@@ -630,11 +688,11 @@ function ui.render(sess, cfg)
     cfg.layout = cfg.layout or {}
     cfg.layout.compact = cfg.layout.compact or {
         window = { w = 360, h = 420 },
-        cols = { 250, 150, 60, 60 },
+        cols = copy_cols(DEFAULT_TRE_COLS.compact),
     }
     cfg.layout.full = cfg.layout.full or {
         window = { w = 600, h = 500 },
-        cols = { 300, 200, 60, 60 },
+        cols = copy_cols(DEFAULT_TRE_COLS.full),
     }
 
     ----------------------------------------------------------------
@@ -717,6 +775,7 @@ function ui.render(sess, cfg)
     ----------------------------------------------------------------
     -- Botones Dynamis / Back  y  Close ✕
     ----------------------------------------------------------------
+    local mode_toggled = false
     do
         local style = imgui.GetStyle()
         local pad = style.FramePadding.x
@@ -750,6 +809,10 @@ function ui.render(sess, cfg)
             -- intercambia el modo
             ui.compact = not ui.compact
             ui._layout_mode = ''
+            ui._last_compact_count = nil
+            ui._last_compact_height = nil
+            ui._top_area = nil
+            mode_toggled = true
             -- si cambia al modo compacto, restaura la sesión actual
             if ui.compact then
                 ui.history_idx = 0
@@ -770,6 +833,17 @@ function ui.render(sess, cfg)
             end
             return
         end
+    end
+
+    if mode_toggled then
+        imgui.End()
+        if pushed_style > 0 then
+            imgui.PopStyleVar(pushed_style)
+        end
+        if pushed_theme > 0 then
+            imgui.PopStyleColor(pushed_theme)
+        end
+        return
     end
 
     ----------------------------------------------------------------
@@ -1011,6 +1085,82 @@ function ui.render(sess, cfg)
                 end
 
                 imgui.EndTable()
+
+                -- Personal THF steal tracker (single block, below Currency table).
+                do
+                    local sp = (sess.drops and sess.drops.steal_personal) or {}
+                    local attempts = tonumber(sp.attempts) or 0
+
+                    if attempts > 0 then
+                        local success = tonumber(sp.success) or 0
+                        local failed = tonumber(sp.failed) or 0
+                        local success_rate = (attempts > 0) and ((success * 100.0) / attempts) or 0.0
+                        local by_currency = sp.by_currency or {}
+                        local order = {
+                            'Tukuku Whiteshell',
+                            'Ordelle Bronzepiece',
+                            'One Byne Bill',
+                        }
+
+                        imgui.Separator()
+                        imgui.TextColored(C.ITEM, 'Personal Steal (THF)')
+
+                        if imgui.BeginTable('tbl_cur_steal_info', 2, TF_BORDER) then
+                            imgui.TableSetupColumn('Info')
+                            imgui.TableSetupColumn('Value')
+                            imgui.TableHeadersRow()
+
+                            imgui.TableNextRow()
+                            imgui.TableSetColumnIndex(0)
+                            imgui.TextUnformatted('Attempts')
+                            imgui.TableSetColumnIndex(1)
+                            imgui.TextColored(C.QTY, tostring(attempts))
+
+                            imgui.TableNextRow()
+                            imgui.TableSetColumnIndex(0)
+                            imgui.TextUnformatted('Success')
+                            imgui.TableSetColumnIndex(1)
+                            imgui.TextColored(C.QTY, tostring(success))
+
+                            imgui.TableNextRow()
+                            imgui.TableSetColumnIndex(0)
+                            imgui.TextUnformatted('Failed')
+                            imgui.TableSetColumnIndex(1)
+                            imgui.TextColored(C.LOST, tostring(failed))
+
+                            imgui.TableNextRow()
+                            imgui.TableSetColumnIndex(0)
+                            imgui.TextUnformatted('Success %')
+                            imgui.TableSetColumnIndex(1)
+                            imgui.TextColored(C.QTY, string.format('%.1f%%', success_rate))
+
+                            local total_stolen = 0
+                            for _, name in ipairs(order) do
+                                local qty = tonumber(by_currency[name]) or 0
+                                if qty > 0 then
+                                    total_stolen = total_stolen + qty
+
+                                    imgui.TableNextRow()
+                                    imgui.TableSetColumnIndex(0)
+                                    imgui.TextColored(C.CUR, name)
+                                    imgui.TableSetColumnIndex(1)
+                                    imgui.TextColored(C.QTY, tostring(qty))
+                                end
+                            end
+
+                            if total_stolen > 0 then
+                                imgui.TableNextRow()
+                                imgui.TableSetColumnIndex(0)
+                                imgui.TextColored(C.ITEM, 'Total Stolen')
+                                imgui.TableSetColumnIndex(1)
+                                imgui.TextColored(C.QTY, tostring(total_stolen))
+                            end
+
+                            imgui.EndTable()
+                        end
+                    end
+                end
+
                 imgui.EndTabItem()
             end
 

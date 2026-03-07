@@ -53,6 +53,16 @@ function core.new_drop_state()
         equips_by_player = {}, -- { player = {item1,item2} }
         lost = {}, -- { item = qty }
         pool_live = {}, -- treasure-pool activo
+        steal_personal = {
+            attempts = 0,
+            success = 0,
+            failed = 0,
+            by_currency = {
+                ['Tukuku Whiteshell'] = 0,
+                ['Ordelle Bronzepiece'] = 0,
+                ['One Byne Bill'] = 0,
+            },
+        },
     }
 end
 

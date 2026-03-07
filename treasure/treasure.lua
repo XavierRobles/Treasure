@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 0.6.0
+-- Versión: 1.0.6
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '0.6.0'
+addon.version = '1.0.6'
 
 require('common')
 local settings = require('settings')
@@ -53,6 +53,10 @@ local DOT_SMALL    = string.char(0x81, 0x45) -- ・
 ------------------------------------------------------------------ estado
 local session, idle_session, lastPool, lastSave = nil, nil, 0, 0
 local cfg, lastPrefSave = nil, 0
+
+local function print_local(msg)
+    print(chat.header('Treasure'):append(chat.message(msg or '')))
+end
 
 local function ensure_dynamis_timer(sess, zid)
     if not sess then
@@ -209,14 +213,12 @@ local function ensure_settings()
         return (ok and loaded) or DEFAULT_CONFIG
     end
 
-    local sid = ent.ServerId or 0
     local base_dir = AshitaCore:GetInstallPath() .. '\\config\\addons\\treasure\\'
     if not fs.exists(base_dir) then
         fs.create_dir(base_dir)
     end
 
-    local tag = string.format('%s_%u', pname, sid)
-    local char_dir = base_dir .. tag .. '\\'
+    local char_dir = base_dir .. pname .. '\\'
     if not fs.exists(char_dir) then
         fs.create_dir(char_dir)
     end
@@ -228,6 +230,18 @@ local function ensure_settings()
         local ok, loaded = pcall(dofile, cfg_file)
         if ok and type(loaded) == 'table' then
             cfg = loaded
+        end
+    end
+
+    -- Legacy compatibility: previous builds used "<name>_<ServerId>" folders.
+    if not cfg then
+        local sid = ent.ServerId or 0
+        local legacy_file = base_dir .. string.format('%s_%u\\settings.lua', pname, sid)
+        if fs.exists(legacy_file) then
+            local ok, loaded = pcall(dofile, legacy_file)
+            if ok and type(loaded) == 'table' then
+                cfg = loaded
+            end
         end
     end
 
@@ -347,6 +361,10 @@ ashita.events.register('command', 'treasure_cmd', function(e)
 
     e.blocked = true
 
+    if not cfg then
+        cfg = ensure_settings()
+    end
+
     local function norm(s)
         return (s or ''):gsub('%c', ''):lower():gsub('%s+', ' ')
                         :gsub('^%s+', ''):gsub('%s+$', '')
@@ -420,10 +438,6 @@ ashita.events.register('command', 'treasure_cmd', function(e)
         enqueue_party_chat(msg)
     end
 
-    local function print_local(msg)
-        print(chat.header('Treasure'):append(chat.message(msg or '')))
-    end
-
     local function ensure_event()
         if not (session and session.is_event and session.drops and session.drops.currency_total) then
             print_local('No active Dynamis session.')
@@ -443,6 +457,11 @@ ashita.events.register('command', 'treasure_cmd', function(e)
     local sub = (args[2] or ''):lower()
     local want_totals = (sub == 'c') or (sub == 'currency') or (sub == 'cur')
     local want_who = (sub == 'who')
+
+    -- No steal command: keep steal stats UI-only and silent.
+    if sub == 'steal' or sub == 'thf' then
+        return
+    end
 
     if want_totals or want_who then
         if not ensure_event() then
