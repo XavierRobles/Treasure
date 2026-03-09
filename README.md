@@ -32,7 +32,7 @@
 - Improved Limbus end behavior: run can stay active after timer end while pool items remain; it closes once pool is done or on zone out.
 - Improved reconnect handling so active sessions are saved before character state reset and can resume cleanly.
 - Updated compact header flow: **Dynamis** and **Limbus** buttons open full mode for that event, and **Back** always returns to compact mode.
-- Fixed compact header compatibility on clients where `imgui.Col` constants are not exposed.
+- Improved compact header compatibility across different clients.
 - Added a new **All** tab in Limbus to show merged totals (coins + items) and lost values in one table.
 - Limbus run files are now created only when the run actually starts (run-start message), not when entering Apollyon/Temenos lobby.
 - Added automatic **Run N** session naming for same-day repeats (Run 1, Run 2, ...), and event-filtered History lists.
@@ -42,6 +42,10 @@
 - Added a Limbus **Gate/Vortex state icon** (open/closed) in the top status area.
 - Refined compact Limbus status to focus on time, floor, and gate/vortex state while the run is active.
 - Updated the interface style with rounded event buttons, improved compact header behavior, and refreshed event tabs for Limbus/Dynamis.
+- Added separate selected-border settings for **Dynamis** and **Limbus** buttons.
+- Event Buttons reset now affects only the current event settings.
+- Fixed session-history scrolling so the list no longer jumps back to the top while browsing.
+- Fixed full-view mouse-wheel scrolling so content keeps scrolling smoothly with a fixed **Back / X** header.
 
 ### v1.0.7 (Español)
 
@@ -55,7 +59,7 @@
 - Mejorado el cierre de Limbus: tras terminar el tiempo, la sesión sigue viva mientras quede pool; se cierra al vaciar pool o salir de zona.
 - Mejorado el manejo de reconexión guardando la sesión activa antes de resetear estado del personaje.
 - Ajustado el flujo de cabecera en compacto: botones **Dynamis** y **Limbus** abren su menú en full, y **Back** siempre vuelve a compacto.
-- Corregida compatibilidad en cabecera compacta para clientes donde no existen las constantes `imgui.Col`.
+- Mejorada la compatibilidad de la cabecera compacta en distintos clientes.
 - Añadida una nueva pestaña **All** en Limbus para ver en una sola tabla los totales combinados (coins + items) y perdidos.
 - Los archivos de run de Limbus ahora se crean solo cuando la run empieza de verdad (mensaje de inicio), no al entrar al lobby de Apollyon/Temenos.
 - Añadido nombrado automático de sesiones con **Run N** para repeticiones el mismo día (Run 1, Run 2, ...), y filtrado por evento en el historial.
@@ -65,6 +69,10 @@
 - Añadido un **icono de estado Gate/Vortex** (abierto/cerrado) en la zona de estado superior de Limbus.
 - Ajustado el estado compacto de Limbus para centrarse en tiempo, piso y estado de gate/vortex mientras la run está activa.
 - Actualizado el estilo de interfaz con botones de evento más redondeados, mejor cabecera en compacto y pestañas renovadas para Limbus/Dynamis.
+- Añadidos ajustes separados de borde seleccionado para los botones de **Dynamis** y **Limbus**.
+- El reset de Event Buttons ahora solo afecta a los ajustes del evento activo.
+- Corregido el scroll del historial para que no vuelva arriba mientras recorres la lista.
+- Corregido el scroll con rueda en vista full para que el contenido baje fluido y la cabecera **Back / X** quede fija.
 
 ---
 ### v1.0.6 (English)

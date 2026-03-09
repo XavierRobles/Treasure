@@ -243,21 +243,21 @@ end
 
 function ui_limbus.top_left_status(ctx)
     local sess = ctx and ctx.sess
+    local run_active = (sess and sess.is_event and sess.limbus_run_started == true and sess.limbus_run_ended ~= true)
+    if not run_active then
+        return nil
+    end
     local t = limbus_time_left_text(sess)
     local ready = limbus_gate_state(sess)
-    local floor, pending = limbus_floor_state(sess)
-    local floor_txt = 'F' .. tostring(floor) .. (pending and '*' or '')
+    local floor = limbus_floor_state(sess)
+    local floor_txt = 'F' .. tostring(floor)
     local door_label = limbus_door_label(sess)
     local tail = floor_txt .. ' | ' .. door_label .. ':' .. (ready and 'OPEN' or 'CLOSED')
 
     if t and t ~= '' then
         return t .. ' | ' .. tail
     end
-    -- Fallback in case timer sync is not yet available: keep floor/door visible.
-    if sess and sess.is_event then
-        return '--:--:-- | ' .. tail
-    end
-    return nil
+    return '--:--:-- | ' .. tail
 end
 
 function ui_limbus.render(ctx)
@@ -275,21 +275,32 @@ function ui_limbus.render(ctx)
     local fmt_n = ctx.fmt_n
     local store = ctx.store
     local chip_color_for_item = ctx.chip_color_for_item
+    local draw_gate_icon = ctx.draw_gate_icon
     local draw_treasure_table = ctx.draw_treasure_table
     local draw_settings_panel = ctx.draw_settings_panel
     local gate_ready, _, gate_opens = limbus_gate_state(sess)
     local floor_now, floor_pending = limbus_floor_state(sess)
-    local run_started = (sess and sess.limbus_run_started == true)
+    local run_started = (sess and sess.is_event and sess.limbus_run_started == true and sess.limbus_run_ended ~= true)
     local door_label = limbus_door_label(sess)
     local state_ok = V.STATE_OK or { 0.20, 0.85, 0.20, 1.0 }
     local state_alert = V.STATE_ALERT or { 0.95, 0.30, 0.30, 1.0 }
 
     if (not ui.compact) and run_started then
-        local icon = gate_ready and '[+]' or '[-]'
-        if gate_ready then
-            imgui.TextColored(state_ok, door_label .. ' ' .. icon .. ' OPEN - You can go up now.')
+        local is_transition = (sess and sess.limbus_transition_pending == true) or floor_pending
+        local drew_icon = false
+        if type(draw_gate_icon) == 'function' then
+            local ok_icon, icon_res = pcall(draw_gate_icon, sess, 22)
+            drew_icon = (ok_icon and icon_res == true)
+        end
+        if drew_icon then
+            imgui.SameLine()
+        end
+        if is_transition then
+            imgui.TextDisabled(door_label .. ' TRANSITION')
+        elseif gate_ready then
+            imgui.TextColored(state_ok, door_label .. ' OPEN - You can go up now.')
         else
-            imgui.TextColored(state_alert, door_label .. ' ' .. icon .. ' CLOSED')
+            imgui.TextColored(state_alert, door_label .. ' CLOSED')
         end
         if gate_opens > 0 then
             imgui.SameLine()
@@ -790,7 +801,7 @@ function ui_limbus.render(ctx)
             end
 
             if imgui.BeginTabItem('Settings') then
-                draw_settings_panel(cfg, C)
+                draw_settings_panel(cfg, C, ctx.event_id or 'limbus')
                 imgui.EndTabItem()
             end
         end

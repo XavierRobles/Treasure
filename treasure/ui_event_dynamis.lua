@@ -335,16 +335,10 @@ if imgui.BeginTabBar('##edtabs') then
                         if imgui.Selectable('All players', ui.filter == 'All') then
                             ui.filter = 'All'
                         end
-                        if ui.filter == 'All' then
-                            imgui.SetItemDefaultFocus()
-                        end
 
                         for _, p in ipairs(plist) do
                             if imgui.Selectable(p, ui.filter == p) then
                                 ui.filter = p
-                            end
-                            if ui.filter == p then
-                                imgui.SetItemDefaultFocus()
                             end
                         end
                         imgui.EndCombo()
@@ -580,9 +574,6 @@ if imgui.BeginTabBar('##edtabs') then
                                 local vlabel = fmt and string.format(fmt, v) or tostring(v)
                                 if imgui.Selectable(vlabel, sel) then
                                     current = v
-                                end
-                                if sel then
-                                    imgui.SetItemDefaultFocus()
                                 end
                             end
                             imgui.EndCombo()
@@ -1097,7 +1088,7 @@ if imgui.BeginTabBar('##edtabs') then
 
             ---------------------------------------------------------------- SETTINGS
             if imgui.BeginTabItem('Settings') then
-                draw_settings_panel(cfg, C)
+                draw_settings_panel(cfg, C, ctx.event_id or 'dynamis')
                 imgui.EndTabItem()
             end
         end -- compact / full

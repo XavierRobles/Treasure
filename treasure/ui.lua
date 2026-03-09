@@ -76,7 +76,21 @@ local SV_TAB_ROUNDING = rawget(_G, 'ImGuiStyleVar_TabRounding')
         or rawget(imgui, 'StyleVar_TabRounding')
         or (imgui.StyleVar and imgui.StyleVar.TabRounding)
 
-local GATE_ICONS = { loaded = false, open = nil, closed = nil }
+local GATE_ICONS = {
+    loaded = false,
+    gate = nil,
+    gate_open = nil,
+    gate_closed = nil,
+    vortex = nil,
+    vortex_open = nil,
+    vortex_closed = nil,
+    transition = nil,
+    open = nil,
+    closed = nil,
+}
+local ICON_TINT_WHITE = { 1.0, 1.0, 1.0, 1.0 }
+local GATE_TINT_OPEN = { 0.20, 1.0, 0.30, 1.0 }     -- verde
+local GATE_TINT_CLOSED = { 1.0, 0.38, 0.38, 1.0 }   -- rojo
 
 -- libs ----------------------------------------------------------
 local SETTINGS_OK, settings = pcall(require, 'settings')   -- settings.lua
@@ -343,7 +357,16 @@ end
 local TF_BORDER = imgui.TableFlags_BordersOuter
         or (imgui.TableFlags and imgui.TableFlags.BordersOuter) or 0
 
-local DEFAULT_COLORS = {
+local DEFAULT_COLORS_DYNAMIS = {
+    NAME = { 0.55, 0.78, 1.00, 1 },
+    ITEM = { 0, 1, 0.9961, 1 },
+    CUR = { 0.1725, 1, 0.0431, 1 },
+    HUNDO = { 1, 0.84, 0, 1 },
+    QTY = { 1, 1, 1, 1 },
+    LOST = { 1, 0.35, 0.35, 1 },
+}
+
+local DEFAULT_COLORS_LIMBUS = {
     NAME = { 0.55, 0.78, 1.00, 1 },
     ITEM = { 0, 1, 0.9961, 1 },
     CUR = { 1, 0.84, 0, 1 },
@@ -351,6 +374,9 @@ local DEFAULT_COLORS = {
     QTY = { 1, 1, 1, 1 },
     LOST = { 1, 0.35, 0.35, 1 },
 }
+
+-- Legacy/default alias used by shared helpers (defaults to Dynamis).
+local DEFAULT_COLORS = DEFAULT_COLORS_DYNAMIS
 
 local DEFAULT_CHIP_COLORS = {
     magenta = { 0.5255, 0.3373, 0.8471, 1.0 },   -- #8656D8
@@ -390,6 +416,9 @@ local CHIP_COLOR_LABELS = {
     crepuscular = 'Crepuscular Chip',
 }
 
+local DEFAULT_EVENT_ACCENT_DYNAMIS = { 1.00, 0.62, 0.26, 0.90 } -- #FF9E42
+local DEFAULT_EVENT_ACCENT_LIMBUS = { 0.18, 0.77, 0.71, 0.90 }  -- #2EC4B5
+
 local DEFAULT_VISUAL_COLORS = {
     HUD_TEXT = { 0.84, 0.87, 0.91, 1.00 },
     EVENT_DYNAMIS = { 1.00, 0.62, 0.26, 0.90 },
@@ -397,9 +426,19 @@ local DEFAULT_VISUAL_COLORS = {
     STATE_OK = { 0.24, 0.86, 0.52, 1.00 },
     STATE_ALERT = { 1.00, 0.30, 0.31, 1.00 },
     WINDOW_BG = { 0.07, 0.08, 0.10, 0.94 },
+    CONTENT_BG = { 0.10, 0.11, 0.13, 0.90 },
     HEADER_BG = { 0.09, 0.09, 0.10, 0.96 },
     HEADER_BORDER = { 0.45, 0.41, 0.30, 0.65 },
     HEADER_TEXT = { 0.90, 0.90, 0.91, 1.00 },
+    CONTROL_BG = { 0.13, 0.14, 0.16, 0.92 },
+    CONTROL_BG_HOVERED = { 0.16, 0.18, 0.21, 0.95 },
+    CONTROL_BG_ACTIVE = { 0.20, 0.22, 0.26, 0.98 },
+    TAB_BG = { 0.10, 0.10, 0.11, 0.96 },
+    TAB_BG_HOVERED = { 0.14, 0.15, 0.18, 0.98 },
+    TAB_BG_ACTIVE = { 0.18, 0.20, 0.24, 0.99 },
+    TAB_BG_UNFOCUSED = { 0.08, 0.08, 0.09, 0.92 },
+    TAB_BG_UNFOCUSED_ACTIVE = { 0.13, 0.14, 0.17, 0.95 },
+    SEPARATOR = { 0.22, 0.22, 0.24, 0.85 },
 }
 
 local DEFAULT_BUTTON_STYLE = {
@@ -408,7 +447,9 @@ local DEFAULT_BUTTON_STYLE = {
     border_selected = 1.8,
     border_idle = 0.0,
     selected_bg = { 0.22, 0.20, 0.16, 0.96 },
-    selected_border = { 0.80, 0.69, 0.44, 0.92 },
+    selected_border = { 0.180392, 0.768627, 0.709804, 0.901961 }, -- legacy/fallback (Limbus) #2EC4B5E6
+    selected_border_dynamis = { 0.180392, 0.768627, 0.709804, 0.901961 }, -- #2EC4B5E6
+    selected_border_limbus = { 1.000000, 0.701961, 0.278431, 0.901961 }, -- #FFB347E6
     selected_text = { 0.94, 0.90, 0.76, 1.00 },
     idle_bg = { 0.08, 0.08, 0.09, 0.95 },
     idle_border = { 0.35, 0.33, 0.28, 0.72 },
@@ -419,8 +460,8 @@ local function copy_rgba(src)
     return { src[1], src[2], src[3], src[4] }
 end
 
-local LEGACY_CUR_DEFAULT = { 0.1725, 1.0, 0.0431, 1.0 }
-local LEGACY_ITEM_DEFAULT = { 1.0, 1.0, 1.0, 1.0 }
+local CUR_FIX_WRONG = { 1.0, 0.84, 0.0, 1.0 }
+local CUR_FIX_DYNAMIS = { 0.1725, 1.0, 0.0431, 1.0 }
 
 local function rgba_equals(a, b, eps)
     eps = eps or 0.0005
@@ -448,6 +489,38 @@ local function sanitize_rgba(src, fallback)
         out[i] = v
     end
     return out
+end
+
+local function sanitize_color_map(src, fallback)
+    local out = {}
+    for k, v in pairs(fallback) do
+        out[k] = sanitize_rgba(src and src[k], v)
+    end
+    return out
+end
+
+local function event_loot_colors(cfg, event_id)
+    local id = tostring(event_id or ''):lower()
+    if id == 'limbus' then
+        return (cfg and cfg.colors_limbus) or (cfg and cfg.colors) or DEFAULT_COLORS_LIMBUS
+    end
+    return (cfg and cfg.colors_dynamis) or (cfg and cfg.colors) or DEFAULT_COLORS_DYNAMIS
+end
+
+local function selected_border_for_event(bs, event_id)
+    local style = bs or DEFAULT_BUTTON_STYLE
+    local id = tostring(event_id or ''):lower()
+    local src = nil
+    if id == 'limbus' then
+        src = style.selected_border_limbus
+                or style.selected_border
+                or DEFAULT_BUTTON_STYLE.selected_border_limbus
+    else
+        src = style.selected_border_dynamis
+                or style.selected_border
+                or DEFAULT_BUTTON_STYLE.selected_border_dynamis
+    end
+    return copy_rgba(src or DEFAULT_BUTTON_STYLE.selected_border)
 end
 
 local function tint_rgba(src, mul, add_alpha)
@@ -485,6 +558,64 @@ local function mix_rgba(a, b, t)
         out[i] = v
     end
     return out
+end
+
+local function theme_col_rgba(theme_tbl, col_id, fallback)
+    local src = theme_tbl and col_id and theme_tbl[col_id]
+    if type(src) ~= 'table' then
+        return copy_rgba(fallback)
+    end
+    return sanitize_rgba(src, fallback)
+end
+
+local function apply_theme_visual_preset(cfg, theme_name)
+    if not (THEMES_OK and cfg) then
+        return false
+    end
+    local th = ADDON_THEMES[theme_name] or ADDON_THEMES.Default
+    if type(th) ~= 'table' then
+        return false
+    end
+
+    cfg.visual_colors = cfg.visual_colors or {}
+    local V = cfg.visual_colors
+
+    local win = theme_col_rgba(th, COL_WINDOW_BG, DEFAULT_VISUAL_COLORS.WINDOW_BG)
+    local frame = theme_col_rgba(th, COL_FRAME_BG, DEFAULT_VISUAL_COLORS.CONTROL_BG)
+    local frame_h = theme_col_rgba(th, COL_FRAME_BG_HOVERED, DEFAULT_VISUAL_COLORS.CONTROL_BG_HOVERED)
+    local frame_a = theme_col_rgba(th, COL_FRAME_BG_ACTIVE, DEFAULT_VISUAL_COLORS.CONTROL_BG_ACTIVE)
+    local text = theme_col_rgba(th, COL_TEXT, DEFAULT_VISUAL_COLORS.HUD_TEXT)
+    local border = theme_col_rgba(th, COL_BORDER, mix_rgba(frame_h, text, 0.18))
+    local sep = theme_col_rgba(th, COL_SEPARATOR, mix_rgba(frame, border, 0.55))
+
+    V.HUD_TEXT = text
+    V.WINDOW_BG = win
+    V.CONTENT_BG = mix_rgba(win, frame, 0.58)
+    V.HEADER_BG = mix_rgba(win, frame, 0.34)
+    V.HEADER_BORDER = mix_rgba(border, sep, 0.35)
+    V.HEADER_TEXT = text
+    V.CONTROL_BG = frame
+    V.CONTROL_BG_HOVERED = frame_h
+    V.CONTROL_BG_ACTIVE = frame_a
+    V.TAB_BG = mix_rgba(frame, win, 0.38)
+    V.TAB_BG_HOVERED = mix_rgba(frame_h, win, 0.28)
+    V.TAB_BG_ACTIVE = mix_rgba(frame_a, win, 0.18)
+    V.TAB_BG_UNFOCUSED = mix_rgba(win, frame, 0.14)
+    V.TAB_BG_UNFOCUSED_ACTIVE = mix_rgba(frame, frame_h, 0.32)
+    V.SEPARATOR = sep
+    V.EVENT_DYNAMIS = mix_rgba(DEFAULT_EVENT_ACCENT_DYNAMIS, frame_h, 0.28)
+    V.EVENT_LIMBUS = mix_rgba(DEFAULT_EVENT_ACCENT_LIMBUS, frame_a, 0.28)
+
+    cfg.button_style = cfg.button_style or {}
+    local B = cfg.button_style
+    B.selected_bg = mix_rgba(frame_h, frame_a, 0.34)
+    B.selected_border = mix_rgba(border, sep, 0.30)
+    B.selected_text = text
+    B.idle_bg = tint_rgba(frame, 0.86, 0.00)
+    B.idle_border = mix_rgba(border, sep, 0.50)
+    B.idle_text = mix_rgba(text, { 0.78, 0.80, 0.84, 1.0 }, 0.22)
+
+    return true
 end
 
 local function clamp_num(v, min_v, max_v, fallback)
@@ -704,17 +835,128 @@ local function ensure_gate_icons_loaded()
     if root == '' then
         return
     end
-    GATE_ICONS.open = load_texture(root .. '\\addons\\treasure\\icons\\open.png')
-    GATE_ICONS.closed = load_texture(root .. '\\addons\\treasure\\icons\\closed.png')
+
+    local function load_first(rel_paths)
+        for _, rel in ipairs(rel_paths) do
+            local tex = load_texture(root .. rel)
+            if tex ~= nil then
+                return tex
+            end
+        end
+        return nil
+    end
+
+    GATE_ICONS.gate_open = load_first({
+        '\\addons\\treasure\\icons\\gate_open.png',
+        '\\addons\\treasure\\icons\\gate_open.PNG',
+    })
+    GATE_ICONS.gate_closed = load_first({
+        '\\addons\\treasure\\icons\\gate_closed.png',
+        '\\addons\\treasure\\icons\\gate_closed.PNG',
+    })
+    GATE_ICONS.gate = load_first({
+        '\\addons\\treasure\\icons\\gate.png',
+        '\\addons\\treasure\\icons\\gate.PNG',
+    })
+    GATE_ICONS.vortex = load_first({
+        '\\addons\\treasure\\icons\\vortex.png',
+        '\\addons\\treasure\\icons\\vortex.PNG',
+    })
+    GATE_ICONS.vortex_open = load_first({
+        '\\addons\\treasure\\icons\\vortex_open.png',
+        '\\addons\\treasure\\icons\\vortex_open.PNG',
+    })
+    GATE_ICONS.vortex_closed = load_first({
+        '\\addons\\treasure\\icons\\vortex_closed.png',
+        '\\addons\\treasure\\icons\\vortex_closed.PNG',
+    })
+    GATE_ICONS.transition = load_first({
+        '\\addons\\treasure\\icons\\transicion.png',
+        '\\addons\\treasure\\icons\\transicion.PNG',
+        '\\addons\\treasure\\icons\\transicion.gif',
+        '\\addons\\treasure\\icons\\transition.png',
+        '\\addons\\treasure\\icons\\transition.PNG',
+        '\\addons\\treasure\\icons\\transition.gif',
+    })
+
+    -- Legacy fallback icons.
+    GATE_ICONS.open = load_first({
+        '\\addons\\treasure\\icons\\open.png',
+        '\\addons\\treasure\\icons\\open.PNG',
+    })
+    GATE_ICONS.closed = load_first({
+        '\\addons\\treasure\\icons\\closed.png',
+        '\\addons\\treasure\\icons\\closed.PNG',
+    })
 end
 
-local function draw_gate_icon(is_open, size)
+local function limbus_door_icon_kind(sess)
+    local zid = tonumber(sess and sess.zone_id) or 0
+    local zone_name = norm(tostring(sess and sess.zone_name or ''))
+    if zone_name:find('apollyon', 1, true) then
+        return 'vortex'
+    end
+    if zone_name:find('temenos', 1, true) then
+        return 'gate'
+    end
+    -- Zone ids fallback (server-specific mapping observed in live tests):
+    -- 37 = Temenos, 38 = Apollyon.
+    if zid == 37 then
+        return 'gate'
+    end
+    if zid == 38 then
+        return 'vortex'
+    end
+    return 'gate'
+end
+
+local function draw_gate_icon(sess, size)
     ensure_gate_icons_loaded()
     if not FFI_OK then
         return false
     end
 
-    local tex = is_open and GATE_ICONS.open or GATE_ICONS.closed
+    local gate_open = (sess and sess.limbus_gate_ready == true)
+    local is_transition = (sess and sess.limbus_transition_pending == true)
+    local kind = limbus_door_icon_kind(sess)
+
+    local base_size = tonumber(size) or 16
+    local icon_size = base_size
+    local tex = nil
+    local tint = ICON_TINT_WHITE
+    if is_transition then
+        tex = GATE_ICONS.transition
+        -- Transition pulse animation (brightness + slight zoom).
+        local pulse = (math.sin(os.clock() * 6.5) + 1.0) * 0.5
+        local scale = 0.72 + (pulse * 0.52)
+        icon_size = math.max(12, math.floor((icon_size * scale) + 0.5))
+        tint = {
+            0.50 + (0.45 * pulse),
+            0.72 + (0.28 * pulse),
+            1.00,
+            0.74 + (0.26 * pulse),
+        }
+    end
+    if tex == nil then
+        if kind == 'vortex' then
+            if gate_open then
+                tex = GATE_ICONS.vortex_open or GATE_ICONS.vortex or GATE_ICONS.vortex_closed
+            else
+                tex = GATE_ICONS.vortex_closed or GATE_ICONS.vortex or GATE_ICONS.vortex_open
+            end
+            tint = ICON_TINT_WHITE
+        else
+            -- Prefer dedicated colored gate variants when available.
+            tex = gate_open and GATE_ICONS.gate_open or GATE_ICONS.gate_closed
+            if tex == nil and GATE_ICONS.gate ~= nil then
+                tex = GATE_ICONS.gate
+                tint = gate_open and GATE_TINT_OPEN or GATE_TINT_CLOSED
+            end
+        end
+    end
+    if tex == nil then
+        tex = gate_open and GATE_ICONS.open or GATE_ICONS.closed
+    end
     if tex == nil then
         return false
     end
@@ -724,28 +966,34 @@ local function draw_gate_icon(is_open, size)
         return false
     end
 
-    imgui.Image(ptr, { size, size }, { 0, 0 }, { 1, 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 })
+    -- Keep transition scaling centered around the original icon anchor.
+    if icon_size ~= base_size then
+        local cx, cy = imgui.GetCursorPos()
+        if type(cx) ~= 'number' then
+            cx, cy = _get_xy(cx)
+        end
+        local off = (base_size - icon_size) * 0.5
+        imgui.SetCursorPosX(cx + off)
+        imgui.SetCursorPosY(cy + off)
+    end
+
+    imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint, { 0, 0, 0, 0 })
     return true
 end
 
 local function push_tabs_style(event_id, cfg, C)
-    local accent = cfg and cfg.visual_colors and cfg.visual_colors.EVENT_DYNAMIS or { 0.85, 0.58, 0.24, 1.0 }
+    local accent = cfg and cfg.visual_colors and cfg.visual_colors.EVENT_DYNAMIS or DEFAULT_EVENT_ACCENT_DYNAMIS
     if tostring(event_id or '') == 'limbus' then
-        accent = cfg and cfg.visual_colors and cfg.visual_colors.EVENT_LIMBUS or { 0.22, 0.72, 0.72, 1.0 }
+        accent = cfg and cfg.visual_colors and cfg.visual_colors.EVENT_LIMBUS or DEFAULT_EVENT_ACCENT_LIMBUS
     end
 
-    -- Tie tab accent to the loot palette for stronger visual identity.
-    local event_tone = (tostring(event_id or '') == 'limbus') and (C and C.HUNDO) or (C and C.ITEM)
-    if event_tone then
-        accent = mix_rgba(accent, event_tone, 0.55)
-    end
-
-    local tab_bg = { 0.10, 0.10, 0.11, 0.96 }
-    local tab_hover = mix_rgba(tab_bg, accent, 0.35)
-    local tab_active = mix_rgba(tab_bg, accent, 0.68)
-    local tab_unfocus = { 0.08, 0.08, 0.09, 0.92 }
-    local tab_unfocus_active = mix_rgba(tab_unfocus, accent, 0.45)
-    local sep = mix_rgba({ 0.22, 0.22, 0.24, 0.85 }, accent, 0.35)
+    local V = (cfg and cfg.visual_colors) or DEFAULT_VISUAL_COLORS
+    local tab_bg = copy_rgba(V.TAB_BG or DEFAULT_VISUAL_COLORS.TAB_BG)
+    local tab_hover = mix_rgba(copy_rgba(V.TAB_BG_HOVERED or DEFAULT_VISUAL_COLORS.TAB_BG_HOVERED), accent, 0.24)
+    local tab_active = mix_rgba(copy_rgba(V.TAB_BG_ACTIVE or DEFAULT_VISUAL_COLORS.TAB_BG_ACTIVE), accent, 0.32)
+    local tab_unfocus = copy_rgba(V.TAB_BG_UNFOCUSED or DEFAULT_VISUAL_COLORS.TAB_BG_UNFOCUSED)
+    local tab_unfocus_active = mix_rgba(copy_rgba(V.TAB_BG_UNFOCUSED_ACTIVE or DEFAULT_VISUAL_COLORS.TAB_BG_UNFOCUSED_ACTIVE), accent, 0.26)
+    local sep = mix_rgba(copy_rgba(V.SEPARATOR or DEFAULT_VISUAL_COLORS.SEPARATOR), accent, 0.18)
 
     local pushed_colors = 0
     local function push_col(id, value)
@@ -837,7 +1085,10 @@ local ui = {
     selected_event = nil,
     selected_event_user = false,
     history_idx = 0,
+    history_file = nil,
     history_session = nil,
+    _history_combo_open = false,
+    _history_files = nil,
     glass_paid = {},
     currency_delivered = {},
     players_currency_only = false,
@@ -1001,204 +1252,386 @@ local function draw_treasure_table (sess, C, cfg)
     end
 end
 
-local function draw_settings_panel(cfg, C)
+local function draw_settings_panel(cfg, C, event_id)
     local changed = false
-    local list = THEMES_OK and keys(ADDON_THEMES) or { cfg.theme }
-    local sel = 1;
-    for i, n in ipairs(list) do
-        if n == cfg.theme then
-            sel = i
+    local active_event = tostring(event_id or ''):lower()
+    if (active_event ~= 'dynamis') and (active_event ~= 'limbus') then
+        active_event = tostring(ui.selected_event or ui.active_event or 'dynamis'):lower()
+        if (active_event ~= 'dynamis') and (active_event ~= 'limbus') then
+            active_event = 'dynamis'
         end
     end
-    if imgui.BeginCombo('Theme', list[sel] or '?') then
-        for i, nm in ipairs(list) do
-            if imgui.Selectable(nm, sel == i) then
-                cfg.theme = nm;
-                changed = true
-            end
-        end
-        imgui.EndCombo()
-    end
-    local a = { cfg.alpha }
-    if imgui.SliderFloat('Opacity', a, 0.2, 1.0, '%.2f') then
-        cfg.alpha = a[1];
-        changed = true
-    end
-    -- Control deslizante para ajustar la escala de la fuente de la ventana.
-    local fs = { cfg.font_scale or 1.0 }
-    if imgui.SliderFloat('Font Scale', fs, 0.5, 2.0, '%.2f') then
-        cfg.font_scale = fs[1]
-        changed = true
-    end
-    imgui.Separator()
-    local function picker(lbl, key)
-        if imgui.ColorEdit4(lbl, cfg.colors[key], imgui.ColorEditFlags_NoInputs) then
-            changed = true
-        end
-    end
-    picker('Player names', 'NAME');
-    picker('Equipment', 'ITEM');
-    picker('Currency', 'CUR')
-    picker('100-piece', 'HUNDO');
-    picker('Qty / Total', 'QTY');
-    picker('Lost count', 'LOST')
-
-    imgui.Separator()
-    imgui.TextUnformatted('Limbus Chip Colors')
-    local CC = cfg.chip_colors or {}
-    local function cpicker(key)
-        local label = CHIP_COLOR_LABELS[key] or (title(key) .. ' Chip')
-        if imgui.ColorEdit4(label, CC[key], imgui.ColorEditFlags_NoInputs) then
-            changed = true
-        end
-    end
-    for _, key in ipairs(CHIP_COLOR_KEYS) do
-        cpicker(key)
-    end
-    if imgui.SmallButton('Reset chip colors') then
-        for _, key in ipairs(CHIP_COLOR_KEYS) do
-            CC[key] = copy_rgba(DEFAULT_CHIP_COLORS[key])
-        end
-        changed = true
-    end
-    cfg.chip_colors = CC
-
-    imgui.Separator()
-    imgui.TextUnformatted('Visual Theme Colors')
-    local V = cfg.visual_colors or {}
-    local function vpicker(lbl, key)
-        if imgui.ColorEdit4(lbl, V[key], imgui.ColorEditFlags_NoInputs) then
-            changed = true
-        end
-    end
-    vpicker('HUD text', 'HUD_TEXT')
-    vpicker('Dynamis accent', 'EVENT_DYNAMIS')
-    vpicker('Limbus accent', 'EVENT_LIMBUS')
-    vpicker('State OK', 'STATE_OK')
-    vpicker('State alert', 'STATE_ALERT')
-    vpicker('Window background', 'WINDOW_BG')
-    vpicker('Header background', 'HEADER_BG')
-    vpicker('Header border', 'HEADER_BORDER')
-    vpicker('Header text', 'HEADER_TEXT')
-    if imgui.SmallButton('Reset visual colors') then
-        for k, v in pairs(DEFAULT_VISUAL_COLORS) do
-            V[k] = copy_rgba(v)
-        end
-        cfg.visual_colors = V
-        changed = true
-    end
-
-    imgui.Separator()
-    imgui.TextUnformatted('Event Buttons')
+    local dynC = sanitize_color_map(cfg.colors_dynamis or cfg.colors, DEFAULT_COLORS_DYNAMIS)
+    local limC = sanitize_color_map(cfg.colors_limbus or cfg.colors, DEFAULT_COLORS_LIMBUS)
     local B = cfg.button_style or {}
 
-    local rr = { tonumber(B.rounding) or DEFAULT_BUTTON_STYLE.rounding }
-    if imgui.SliderFloat('Roundness (px)', rr, 0.0, 16.0, '%.1f') then
-        B.rounding = rr[1]
-        changed = true
-    end
-    local hh = { tonumber(B.height) or DEFAULT_BUTTON_STYLE.height }
-    if imgui.SliderFloat('Height (px)', hh, 18.0, 36.0, '%.0f') then
-        B.height = hh[1]
-        changed = true
-    end
-    local bs = { tonumber(B.border_selected) or DEFAULT_BUTTON_STYLE.border_selected }
-    if imgui.SliderFloat('Active border', bs, 0.8, 3.0, '%.1f') then
-        B.border_selected = bs[1]
-        changed = true
-    end
-    local bi = { tonumber(B.border_idle) or DEFAULT_BUTTON_STYLE.border_idle }
-    if imgui.SliderFloat('Idle border', bi, 0.0, 2.4, '%.1f') then
-        B.border_idle = bi[1]
-        changed = true
-    end
-
-    local function bpicker(lbl, key)
-        if imgui.ColorEdit4(lbl, B[key], imgui.ColorEditFlags_NoInputs) then
-            changed = true
+    local function current_event_palette()
+        if active_event == 'limbus' then
+            return limC, DEFAULT_COLORS_LIMBUS, 'Limbus'
         end
+        return dynC, DEFAULT_COLORS_DYNAMIS, 'Dynamis'
     end
-    bpicker('Active bg', 'selected_bg')
-    bpicker('Active border color', 'selected_border')
-    bpicker('Active text', 'selected_text')
-    bpicker('Idle bg', 'idle_bg')
-    bpicker('Idle border color', 'idle_border')
-    bpicker('Idle text', 'idle_text')
 
-    imgui.TextDisabled('Preview')
-    do
-        local bs_prev = B
-        local function draw_preview_button(id, label, selected, accent)
-            local base = selected and bs_prev.selected_bg or bs_prev.idle_bg
-            local hovered = tint_rgba(base, 1.10, 0.03)
-            local active = tint_rgba(base, 0.86, 0.00)
-
-            local border = selected and mix_rgba(bs_prev.selected_border, accent, 0.65) or bs_prev.idle_border
-            local text_col = selected and mix_rgba(bs_prev.selected_text, accent, 0.75) or bs_prev.idle_text
-            local border_sz = selected and (bs_prev.border_selected or DEFAULT_BUTTON_STYLE.border_selected) or (bs_prev.border_idle or DEFAULT_BUTTON_STYLE.border_idle)
-
-            local pushed = 0
-            if (COL_BUTTON ~= nil) and (COL_BUTTON_HOVERED ~= nil) and (COL_BUTTON_ACTIVE ~= nil) then
-                imgui.PushStyleColor(COL_BUTTON, base)
-                imgui.PushStyleColor(COL_BUTTON_HOVERED, hovered)
-                imgui.PushStyleColor(COL_BUTTON_ACTIVE, active)
-                pushed = pushed + 3
+    if imgui.BeginTabBar('##settings_sections_' .. active_event) then
+        if imgui.BeginTabItem('Globales') then
+            local _, _, event_label = current_event_palette()
+            local list = THEMES_OK and keys(ADDON_THEMES) or { cfg.theme }
+            local sel = 1
+            for i, n in ipairs(list) do
+                if n == cfg.theme then
+                    sel = i
+                end
             end
-            if COL_BORDER ~= nil then
-                imgui.PushStyleColor(COL_BORDER, border)
-                pushed = pushed + 1
+            if imgui.BeginCombo('Theme', list[sel] or '?') then
+                for i, nm in ipairs(list) do
+                    if imgui.Selectable(nm, sel == i) then
+                        cfg.theme = nm
+                        apply_theme_visual_preset(cfg, nm)
+                        changed = true
+                    end
+                end
+                imgui.EndCombo()
             end
-            if COL_TEXT ~= nil then
-                imgui.PushStyleColor(COL_TEXT, text_col)
-                pushed = pushed + 1
+            local a = { cfg.alpha }
+            if imgui.SliderFloat('Opacity', a, 0.2, 1.0, '%.2f') then
+                cfg.alpha = a[1]
+                changed = true
+            end
+            local fs = { cfg.font_scale or 1.0 }
+            if imgui.SliderFloat('Font Scale', fs, 0.5, 2.0, '%.2f') then
+                cfg.font_scale = fs[1]
+                changed = true
             end
 
-            local pushed_style = 0
-            if SV_FRAME_ROUNDING ~= nil then
-                imgui.PushStyleVar(SV_FRAME_ROUNDING, bs_prev.rounding or DEFAULT_BUTTON_STYLE.rounding)
-                pushed_style = pushed_style + 1
-            end
-            if SV_FRAME_BORDER_SIZE ~= nil then
-                imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, border_sz)
-                pushed_style = pushed_style + 1
+            if active_event == 'limbus' then
+                imgui.Separator()
+                imgui.TextUnformatted('Limbus Status Icon')
+                local isz = { tonumber(cfg.limbus_icon_size) or 30.0 }
+                if imgui.SliderFloat('Icon size (px)', isz, 16.0, 56.0, '%.0f') then
+                    cfg.limbus_icon_size = clamp_num(isz[1], 16.0, 56.0, 30.0)
+                    changed = true
+                end
+                if imgui.SmallButton('Reset icon size') then
+                    cfg.limbus_icon_size = 30.0
+                    changed = true
+                end
+
+                imgui.TextDisabled('Preview')
+                local preview_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 30) + 0.5))
+                local function preview_icon(label, preview_sess)
+                    imgui.BeginGroup()
+                    local ok_draw, drew = pcall(draw_gate_icon, preview_sess, preview_size)
+                    if not (ok_draw and drew) then
+                        imgui.TextUnformatted('[]')
+                    end
+                    imgui.TextDisabled(label)
+                    imgui.EndGroup()
+                end
+
+                imgui.TextDisabled('Gate')
+                preview_icon('Closed', {
+                    zone_name = 'Temenos',
+                    zone_id = 37,
+                    limbus_gate_ready = false,
+                    limbus_transition_pending = false,
+                })
+                imgui.SameLine()
+                preview_icon('Open', {
+                    zone_name = 'Temenos',
+                    zone_id = 37,
+                    limbus_gate_ready = true,
+                    limbus_transition_pending = false,
+                })
             end
 
-            local h = bs_prev.height or DEFAULT_BUTTON_STYLE.height
-            local ok_preview = pcall(imgui.Button, label .. '##btn_preview_' .. id, { 90, h })
-            if not ok_preview then
-                imgui.Button(label .. '##btn_preview_' .. id)
+            imgui.Separator()
+            imgui.TextUnformatted('Visual Theme Colors')
+            local V = cfg.visual_colors or {}
+            local accent_key = (active_event == 'limbus') and 'EVENT_LIMBUS' or 'EVENT_DYNAMIS'
+            local accent_label = (active_event == 'limbus') and 'Limbus accent' or 'Dynamis accent'
+            local function vpicker(lbl, key)
+                if imgui.ColorEdit4(lbl, V[key], imgui.ColorEditFlags_NoInputs) then
+                    changed = true
+                end
+            end
+            vpicker('HUD text', 'HUD_TEXT')
+            vpicker(accent_label, accent_key)
+            vpicker('State OK', 'STATE_OK')
+            vpicker('State alert', 'STATE_ALERT')
+            vpicker('Window background', 'WINDOW_BG')
+            vpicker('Header background', 'HEADER_BG')
+            vpicker('Header border', 'HEADER_BORDER')
+            vpicker('Header text', 'HEADER_TEXT')
+            vpicker('Content background', 'CONTENT_BG')
+            vpicker('Control bg', 'CONTROL_BG')
+            vpicker('Control bg hovered', 'CONTROL_BG_HOVERED')
+            vpicker('Control bg active', 'CONTROL_BG_ACTIVE')
+            vpicker('Tab bg', 'TAB_BG')
+            vpicker('Tab bg hovered', 'TAB_BG_HOVERED')
+            vpicker('Tab bg active', 'TAB_BG_ACTIVE')
+            vpicker('Tab unfocused', 'TAB_BG_UNFOCUSED')
+            vpicker('Tab unfocused active', 'TAB_BG_UNFOCUSED_ACTIVE')
+            vpicker('Separator', 'SEPARATOR')
+            if imgui.SmallButton('Reset visual colors (' .. event_label .. ')') then
+                local reset_keys = {
+                    'HUD_TEXT',
+                    accent_key,
+                    'STATE_OK',
+                    'STATE_ALERT',
+                    'WINDOW_BG',
+                    'HEADER_BG',
+                    'HEADER_BORDER',
+                    'HEADER_TEXT',
+                    'CONTENT_BG',
+                    'CONTROL_BG',
+                    'CONTROL_BG_HOVERED',
+                    'CONTROL_BG_ACTIVE',
+                    'TAB_BG',
+                    'TAB_BG_HOVERED',
+                    'TAB_BG_ACTIVE',
+                    'TAB_BG_UNFOCUSED',
+                    'TAB_BG_UNFOCUSED_ACTIVE',
+                    'SEPARATOR',
+                }
+                for _, key in ipairs(reset_keys) do
+                    V[key] = copy_rgba(DEFAULT_VISUAL_COLORS[key])
+                end
+                cfg.visual_colors = V
+                changed = true
             end
 
-            if pushed_style > 0 then
-                imgui.PopStyleVar(pushed_style)
+            imgui.Separator()
+            imgui.TextUnformatted('Event Buttons')
+            local rr = { tonumber(B.rounding) or DEFAULT_BUTTON_STYLE.rounding }
+            if imgui.SliderFloat('Roundness (px)', rr, 0.0, 16.0, '%.1f') then
+                B.rounding = rr[1]
+                changed = true
             end
-            if pushed > 0 then
-                imgui.PopStyleColor(pushed)
+            local hh = { tonumber(B.height) or DEFAULT_BUTTON_STYLE.height }
+            if imgui.SliderFloat('Height (px)', hh, 18.0, 36.0, '%.0f') then
+                B.height = hh[1]
+                changed = true
             end
+            local bs = { tonumber(B.border_selected) or DEFAULT_BUTTON_STYLE.border_selected }
+            if imgui.SliderFloat('Active border', bs, 0.8, 3.0, '%.1f') then
+                B.border_selected = bs[1]
+                changed = true
+            end
+            local bi = { tonumber(B.border_idle) or DEFAULT_BUTTON_STYLE.border_idle }
+            if imgui.SliderFloat('Idle border', bi, 0.0, 2.4, '%.1f') then
+                B.border_idle = bi[1]
+                changed = true
+            end
+
+            local function bpicker(lbl, key)
+                if imgui.ColorEdit4(lbl, B[key], imgui.ColorEditFlags_NoInputs) then
+                    changed = true
+                end
+            end
+            local active_border_key = (active_event == 'limbus') and 'selected_border_limbus' or 'selected_border_dynamis'
+            local active_border_label = (active_event == 'limbus')
+                    and 'Active border color (Limbus)'
+                    or 'Active border color (Dynamis)'
+            bpicker('Active bg', 'selected_bg')
+            bpicker(active_border_label, active_border_key)
+            bpicker('Active text', 'selected_text')
+            bpicker('Idle bg', 'idle_bg')
+            bpicker('Idle border color', 'idle_border')
+            bpicker('Idle text', 'idle_text')
+
+            imgui.TextDisabled('Preview')
+            do
+                local bs_prev = B
+                local function draw_preview_button(id, label, selected, event_for_border)
+                    local base = selected and bs_prev.selected_bg or bs_prev.idle_bg
+                    local hovered = tint_rgba(base, 1.10, 0.03)
+                    local active = tint_rgba(base, 0.86, 0.00)
+
+                    local border = selected and selected_border_for_event(bs_prev, event_for_border) or copy_rgba(bs_prev.idle_border)
+                    local text_col = selected and copy_rgba(bs_prev.selected_text) or copy_rgba(bs_prev.idle_text)
+                    local border_sz = selected and (bs_prev.border_selected or DEFAULT_BUTTON_STYLE.border_selected) or (bs_prev.border_idle or DEFAULT_BUTTON_STYLE.border_idle)
+
+                    local pushed = 0
+                    if (COL_BUTTON ~= nil) and (COL_BUTTON_HOVERED ~= nil) and (COL_BUTTON_ACTIVE ~= nil) then
+                        imgui.PushStyleColor(COL_BUTTON, base)
+                        imgui.PushStyleColor(COL_BUTTON_HOVERED, hovered)
+                        imgui.PushStyleColor(COL_BUTTON_ACTIVE, active)
+                        pushed = pushed + 3
+                    end
+                    if COL_BORDER ~= nil then
+                        imgui.PushStyleColor(COL_BORDER, border)
+                        pushed = pushed + 1
+                    end
+                    if COL_TEXT ~= nil then
+                        imgui.PushStyleColor(COL_TEXT, text_col)
+                        pushed = pushed + 1
+                    end
+
+                    local pushed_style = 0
+                    if SV_FRAME_ROUNDING ~= nil then
+                        imgui.PushStyleVar(SV_FRAME_ROUNDING, bs_prev.rounding or DEFAULT_BUTTON_STYLE.rounding)
+                        pushed_style = pushed_style + 1
+                    end
+                    if SV_FRAME_BORDER_SIZE ~= nil then
+                        imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, border_sz)
+                        pushed_style = pushed_style + 1
+                    end
+
+                    local h = bs_prev.height or DEFAULT_BUTTON_STYLE.height
+                    local ok_preview = pcall(imgui.Button, label .. '##btn_preview_' .. id, { 90, h })
+                    if not ok_preview then
+                        imgui.Button(label .. '##btn_preview_' .. id)
+                    end
+
+                    if pushed_style > 0 then
+                        imgui.PopStyleVar(pushed_style)
+                    end
+                    if pushed > 0 then
+                        imgui.PopStyleColor(pushed)
+                    end
+                end
+
+                local dyn_sel = (active_event == 'dynamis')
+                local lim_sel = (active_event == 'limbus')
+                draw_preview_button('dyna_sel', 'Dynamis', dyn_sel, 'dynamis')
+                imgui.SameLine()
+                draw_preview_button('lim_sel', 'Limbus', lim_sel, 'limbus')
+            end
+
+            if imgui.SmallButton('Reset button style (' .. event_label .. ')') then
+                local reset_keys = {
+                    'rounding',
+                    'height',
+                    'border_selected',
+                    'border_idle',
+                    'selected_bg',
+                    active_border_key,
+                    'selected_text',
+                    'idle_bg',
+                    'idle_border',
+                    'idle_text',
+                }
+                for _, k in ipairs(reset_keys) do
+                    local v = DEFAULT_BUTTON_STYLE[k]
+                    if type(v) == 'table' then
+                        B[k] = copy_rgba(v)
+                    else
+                        B[k] = v
+                    end
+                end
+                -- Keep legacy field aligned with Dynamis border fallback.
+                B.selected_border = copy_rgba(B.selected_border_dynamis or DEFAULT_BUTTON_STYLE.selected_border_dynamis)
+                changed = true
+            end
+
+            imgui.EndTabItem()
         end
 
-        draw_preview_button('dyna_sel', 'Dynamis', true, C.ITEM or DEFAULT_COLORS.ITEM)
-        imgui.SameLine()
-        draw_preview_button('lim_sel', 'Limbus', true, C.HUNDO or DEFAULT_COLORS.HUNDO)
-        imgui.SameLine()
-        draw_preview_button('idle', 'Idle', false, C.ITEM or DEFAULT_COLORS.ITEM)
-    end
+        if imgui.BeginTabItem('Loots') then
+            local editC, defaultsC, event_label = current_event_palette()
+            imgui.TextUnformatted(event_label .. ' Loot Colors')
 
-    if imgui.SmallButton('Reset button style') then
-        for k, v in pairs(DEFAULT_BUTTON_STYLE) do
-            if type(v) == 'table' then
-                B[k] = copy_rgba(v)
+            local function picker(map, lbl, key)
+                if imgui.ColorEdit4(lbl, map[key], imgui.ColorEditFlags_NoInputs) then
+                    changed = true
+                end
+            end
+
+            picker(editC, 'Player names', 'NAME')
+            picker(editC, 'Equipment', 'ITEM')
+            if active_event == 'limbus' then
+                picker(editC, 'Ancient Beastcoin', 'CUR')
             else
-                B[k] = v
+                picker(editC, 'Currency', 'CUR')
+                picker(editC, '100-piece', 'HUNDO')
             end
+            picker(editC, 'Qty / Total', 'QTY')
+            picker(editC, 'Lost count', 'LOST')
+
+            if imgui.SmallButton('Reset ' .. event_label .. ' colors') then
+                editC = sanitize_color_map(defaultsC, defaultsC)
+                changed = true
+            end
+
+            if active_event == 'limbus' then
+                limC = editC
+            else
+                dynC = editC
+            end
+
+            imgui.EndTabItem()
         end
-        changed = true
+
+        if imgui.BeginTabItem('Chips') then
+            if active_event == 'limbus' then
+                imgui.TextUnformatted('Limbus Chip Colors')
+                local CC = cfg.chip_colors or {}
+                local function cpicker(key)
+                    local label = CHIP_COLOR_LABELS[key] or (title(key) .. ' Chip')
+                    if imgui.ColorEdit4(label, CC[key], imgui.ColorEditFlags_NoInputs) then
+                        changed = true
+                    end
+                end
+                for _, key in ipairs(CHIP_COLOR_KEYS) do
+                    cpicker(key)
+                end
+                if imgui.SmallButton('Reset chip colors') then
+                    for _, key in ipairs(CHIP_COLOR_KEYS) do
+                        CC[key] = copy_rgba(DEFAULT_CHIP_COLORS[key])
+                    end
+                    changed = true
+                end
+                cfg.chip_colors = CC
+            else
+                imgui.TextDisabled('No chips configuration for Dynamis.')
+            end
+            imgui.EndTabItem()
+        end
+
+        imgui.EndTabBar()
     end
+
+    cfg.colors_dynamis = dynC
+    cfg.colors_limbus = limC
+    -- Legacy compatibility: keep cfg.colors mapped to Dynamis palette.
+    cfg.colors = cfg.colors_dynamis
     cfg.button_style = B
 
     if changed then
         persist(cfg)
     end
+end
+
+local function build_event_context(sess, cfg)
+    local event_id = ui.selected_event or (sess and sess.event_id) or ui.active_event
+    return {
+        imgui = imgui,
+        ui = ui,
+        sess = sess,
+        event_id = event_id,
+        cfg = cfg,
+        C = event_loot_colors(cfg, event_id),
+        V = cfg.visual_colors,
+        TF_BORDER = TF_BORDER,
+        keys = keys,
+        is_cur = is_cur,
+        is_hundo = is_hundo,
+        title = title,
+        lost_name = lost_name,
+        to_units = to_units,
+        base_cur = base_cur,
+        display_cur = display_cur,
+        is_valid_player_name = is_valid_player_name,
+        default_event_minutes = default_event_minutes,
+        fmt_n = fmt_n,
+        store = store,
+        chip_color_for_item = function(name)
+            return chip_color_for_item(name, cfg)
+        end,
+        draw_gate_icon = draw_gate_icon,
+        draw_treasure_table = draw_treasure_table,
+        draw_settings_panel = draw_settings_panel,
+    }
 end
 
 --------------------------------------------------------------------
@@ -1210,22 +1643,56 @@ function ui.render(sess, cfg)
     ----------------------------------------------------------------
     cfg.colors = cfg.colors or {}
     local migrated_palette = false
-    for k, v in pairs(DEFAULT_COLORS) do
+    for k, v in pairs(DEFAULT_COLORS_DYNAMIS) do
         if not cfg.colors[k] then
             cfg.colors[k] = { table.unpack(v) }
             migrated_palette = true
         end
     end
-    if rgba_equals(cfg.colors.CUR, LEGACY_CUR_DEFAULT) then
-        cfg.colors.CUR = copy_rgba(DEFAULT_COLORS.HUNDO)
+    -- Restore Dynamis default CUR when the Limbus-era mismatch made CUR = HUNDO.
+    if rgba_equals(cfg.colors.CUR, CUR_FIX_WRONG) and rgba_equals(cfg.colors.HUNDO, CUR_FIX_WRONG) then
+        cfg.colors.CUR = copy_rgba(CUR_FIX_DYNAMIS)
         migrated_palette = true
     end
-    if rgba_equals(cfg.colors.ITEM, LEGACY_ITEM_DEFAULT) then
-        cfg.colors.ITEM = copy_rgba(DEFAULT_COLORS.ITEM)
+
+    if type(cfg.colors_dynamis) ~= 'table' then
+        cfg.colors_dynamis = {}
         migrated_palette = true
+    end
+    for k, v in pairs(DEFAULT_COLORS_DYNAMIS) do
+        if cfg.colors_dynamis[k] == nil then
+            cfg.colors_dynamis[k] = sanitize_rgba(cfg.colors[k], v)
+            migrated_palette = true
+        else
+            cfg.colors_dynamis[k] = sanitize_rgba(cfg.colors_dynamis[k], v)
+        end
+    end
+
+    if type(cfg.colors_limbus) ~= 'table' then
+        cfg.colors_limbus = {}
+        migrated_palette = true
+    end
+    for k, v in pairs(DEFAULT_COLORS_LIMBUS) do
+        if cfg.colors_limbus[k] == nil then
+            cfg.colors_limbus[k] = sanitize_rgba(cfg.colors[k], v)
+            migrated_palette = true
+        else
+            cfg.colors_limbus[k] = sanitize_rgba(cfg.colors_limbus[k], v)
+        end
+    end
+
+    -- Legacy compatibility: keep cfg.colors mirroring Dynamis palette.
+    for k, _ in pairs(DEFAULT_COLORS_DYNAMIS) do
+        if not rgba_equals(cfg.colors[k], cfg.colors_dynamis[k]) then
+            cfg.colors[k] = copy_rgba(cfg.colors_dynamis[k])
+            migrated_palette = true
+        end
     end
     cfg.visual_colors = cfg.visual_colors or {}
     for k, v in pairs(DEFAULT_VISUAL_COLORS) do
+        if cfg.visual_colors[k] == nil then
+            migrated_palette = true
+        end
         cfg.visual_colors[k] = sanitize_rgba(cfg.visual_colors[k], v)
     end
     cfg.chip_colors = cfg.chip_colors or {}
@@ -1239,6 +1706,13 @@ function ui.render(sess, cfg)
         end
         cfg.chip_colors[key] = sanitize_rgba(cfg.chip_colors[key], DEFAULT_CHIP_COLORS[key])
     end
+    do
+        local icon_sz = clamp_num(cfg.limbus_icon_size, 16.0, 56.0, 30.0)
+        if tonumber(cfg.limbus_icon_size) ~= icon_sz then
+            cfg.limbus_icon_size = icon_sz
+            migrated_palette = true
+        end
+    end
     if migrated_palette then
         persist(cfg)
     end
@@ -1249,6 +1723,14 @@ function ui.render(sess, cfg)
     cfg.button_style.border_idle = clamp_num(cfg.button_style.border_idle, 0.0, 2.4, DEFAULT_BUTTON_STYLE.border_idle)
     cfg.button_style.selected_bg = sanitize_rgba(cfg.button_style.selected_bg, DEFAULT_BUTTON_STYLE.selected_bg)
     cfg.button_style.selected_border = sanitize_rgba(cfg.button_style.selected_border, DEFAULT_BUTTON_STYLE.selected_border)
+    cfg.button_style.selected_border_dynamis = sanitize_rgba(
+            cfg.button_style.selected_border_dynamis,
+            DEFAULT_BUTTON_STYLE.selected_border_dynamis or DEFAULT_BUTTON_STYLE.selected_border
+    )
+    cfg.button_style.selected_border_limbus = sanitize_rgba(
+            cfg.button_style.selected_border_limbus,
+            DEFAULT_BUTTON_STYLE.selected_border_limbus or DEFAULT_BUTTON_STYLE.selected_border
+    )
     cfg.button_style.selected_text = sanitize_rgba(cfg.button_style.selected_text, DEFAULT_BUTTON_STYLE.selected_text)
     cfg.button_style.idle_bg = sanitize_rgba(cfg.button_style.idle_bg, DEFAULT_BUTTON_STYLE.idle_bg)
     cfg.button_style.idle_border = sanitize_rgba(cfg.button_style.idle_border, DEFAULT_BUTTON_STYLE.idle_border)
@@ -1257,7 +1739,9 @@ function ui.render(sess, cfg)
     cfg.theme = cfg.theme or ((THEMES_OK and ADDON_THEMES.Default) and 'Default' or '')
     -- Ajuste de escala de fuente para toda la ventana. Valor por defecto 1.0 (sin escalado).
     cfg.font_scale = cfg.font_scale or 1.0
-    local C = cfg.colors
+    cfg.limbus_icon_size = clamp_num(cfg.limbus_icon_size, 16.0, 56.0, 30.0)
+    local active_event = tostring(ui.selected_event or (sess and sess.event_id) or ui.active_event or 'dynamis'):lower()
+    local C = event_loot_colors(cfg, active_event)
 
     ----------------------------------------------------------------
     -- Layout tables
@@ -1294,21 +1778,41 @@ function ui.render(sess, cfg)
     local window_flags = WF_FRAMELESS
     if ui.compact then
         window_flags = bit.bor(window_flags, WF('NoScrollbar'))
+    else
+        -- Full mode scroll is handled by an internal child to avoid parent scroll jumps.
+        window_flags = bit.bor(window_flags, WF('NoScrollbar'), WF('NoScrollWithMouse'))
     end
 
     imgui.SetNextWindowBgAlpha(cfg.alpha)
-    local pushed_window_bg = 0
-    if COL_WINDOW_BG ~= nil then
-        local win_bg = copy_rgba(cfg.visual_colors.WINDOW_BG or DEFAULT_VISUAL_COLORS.WINDOW_BG)
-        win_bg[4] = clamp_num((tonumber(win_bg[4]) or 1.0) * (tonumber(cfg.alpha) or 1.0), 0.0, 1.0, 0.94)
-        imgui.PushStyleColor(COL_WINDOW_BG, win_bg)
-        pushed_window_bg = 1
+    local pushed_visual_bg = 0
+    local function push_visual(id, rgba)
+        if id ~= nil and type(rgba) == 'table' then
+            imgui.PushStyleColor(id, rgba)
+            pushed_visual_bg = pushed_visual_bg + 1
+        end
     end
+    local function themed_bg(key, default_key)
+        local src = cfg.visual_colors[key] or DEFAULT_VISUAL_COLORS[default_key or key]
+        local out = copy_rgba(src)
+        out[4] = clamp_num((tonumber(out[4]) or 1.0) * (tonumber(cfg.alpha) or 1.0), 0.0, 1.0, 1.0)
+        return out
+    end
+    push_visual(COL_WINDOW_BG, themed_bg('WINDOW_BG'))
+    push_visual(COL_CHILD_BG, themed_bg('CONTENT_BG'))
+    push_visual(COL_FRAME_BG, themed_bg('CONTROL_BG'))
+    push_visual(COL_FRAME_BG_HOVERED, themed_bg('CONTROL_BG_HOVERED'))
+    push_visual(COL_FRAME_BG_ACTIVE, themed_bg('CONTROL_BG_ACTIVE'))
+    push_visual(COL_TAB, themed_bg('TAB_BG'))
+    push_visual(COL_TAB_HOVERED, themed_bg('TAB_BG_HOVERED'))
+    push_visual(COL_TAB_ACTIVE, themed_bg('TAB_BG_ACTIVE'))
+    push_visual(COL_TAB_UNFOCUSED, themed_bg('TAB_BG_UNFOCUSED'))
+    push_visual(COL_TAB_UNFOCUSED_ACTIVE, themed_bg('TAB_BG_UNFOCUSED_ACTIVE'))
+    push_visual(COL_SEPARATOR, themed_bg('SEPARATOR'))
 
     if not imgui.Begin('Treasure', false, window_flags) then
         imgui.End()
-        if pushed_window_bg > 0 then
-            imgui.PopStyleColor(pushed_window_bg)
+        if pushed_visual_bg > 0 then
+            imgui.PopStyleColor(pushed_visual_bg)
         end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
@@ -1375,8 +1879,8 @@ function ui.render(sess, cfg)
     if not sess then
         imgui.TextDisabled('Outside event area.')
         imgui.End()
-        if pushed_window_bg > 0 then
-            imgui.PopStyleColor(pushed_window_bg)
+        if pushed_visual_bg > 0 then
+            imgui.PopStyleColor(pushed_visual_bg)
         end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
@@ -1413,8 +1917,6 @@ function ui.render(sess, cfg)
             local title = 'Treasure - ' .. tostring(event_name)
             local header_h = 28
             local bs = cfg.button_style or DEFAULT_BUTTON_STYLE
-            local accent = (event_id == 'limbus') and (C.HUNDO or DEFAULT_COLORS.HUNDO) or (C.ITEM or DEFAULT_COLORS.ITEM)
-
             local hdr_col = 0
             if COL_CHILD_BG ~= nil then
                 imgui.PushStyleColor(COL_CHILD_BG, cfg.visual_colors.HEADER_BG or DEFAULT_VISUAL_COLORS.HEADER_BG)
@@ -1464,8 +1966,8 @@ function ui.render(sess, cfg)
                     local base = is_selected and bs.selected_bg or bs.idle_bg
                     local hovered = tint_rgba(base, 1.10, 0.03)
                     local active = tint_rgba(base, 0.86, 0.00)
-                    local border = is_selected and mix_rgba(bs.selected_border, accent, 0.65) or bs.idle_border
-                    local text_col = is_selected and mix_rgba(bs.selected_text, accent, 0.75) or bs.idle_text
+                    local border = is_selected and selected_border_for_event(bs, event_id) or copy_rgba(bs.idle_border)
+                    local text_col = is_selected and copy_rgba(bs.selected_text) or copy_rgba(bs.idle_text)
                     local border_sz = is_selected and (bs.border_selected or DEFAULT_BUTTON_STYLE.border_selected) or (bs.border_idle or DEFAULT_BUTTON_STYLE.border_idle)
 
                     local pcol = 0
@@ -1522,7 +2024,10 @@ function ui.render(sess, cfg)
                     ui._top_area = nil
                     mode_toggled = true
                     ui.history_idx = 0
+                    ui.history_file = nil
                     ui.history_session = nil
+                    ui._history_combo_open = false
+                    ui._history_files = nil
                 end
 
                 imgui.SetCursorPosX(x_close)
@@ -1547,20 +2052,19 @@ function ui.render(sess, cfg)
             local function draw_event_chip(id, label, chip_w)
                 local selected = (chip_selected_event ~= '' and chip_selected_event == id)
                 local bs = cfg.button_style or DEFAULT_BUTTON_STYLE
-                local accent = (id == 'limbus') and (C.HUNDO or DEFAULT_COLORS.HUNDO) or (C.ITEM or DEFAULT_COLORS.ITEM)
                 local base, hovered, active, border, text_col
                 if selected then
                     base = bs.selected_bg
                     hovered = tint_rgba(base, 1.10, 0.03)
                     active = tint_rgba(base, 0.86, 0.00)
-                    border = mix_rgba(bs.selected_border, accent, 0.65)
-                    text_col = mix_rgba(bs.selected_text, accent, 0.75)
+                    border = selected_border_for_event(bs, id)
+                    text_col = copy_rgba(bs.selected_text)
                 else
                     base = bs.idle_bg
                     hovered = tint_rgba(base, 1.12, 0.03)
                     active = tint_rgba(base, 0.88, 0.00)
-                    border = bs.idle_border
-                    text_col = bs.idle_text
+                    border = copy_rgba(bs.idle_border)
+                    text_col = copy_rgba(bs.idle_text)
                 end
 
                 local pushed = 0
@@ -1618,7 +2122,10 @@ function ui.render(sess, cfg)
                     ui._last_compact_height = nil
                     ui._top_area = nil
                     ui.history_idx = 0
+                    ui.history_file = nil
                     ui.history_session = nil
+                    ui._history_combo_open = false
+                    ui._history_files = nil
                     mode_toggled = true
                 end
             end
@@ -1639,15 +2146,78 @@ function ui.render(sess, cfg)
                         or (sess and sess.limbus_timer ~= nil)
                 if is_limbus then
                     local clean_t = tostring(t):gsub(':OPEN', ''):gsub(':CLOSED', '')
-                    imgui.TextColored(cfg.visual_colors.HUD_TEXT, clean_t)
-                    imgui.SameLine()
                     local gate_open = (sess and sess.limbus_gate_ready == true)
-                    local ok_icon, drew_icon = pcall(draw_gate_icon, gate_open, 14)
+                    local is_transition = (sess and sess.limbus_transition_pending == true)
+                    local time_txt = clean_t
+                    local floor_txt = ''
+                    do
+                        local p_time, p_floor = clean_t:match('^%s*([^|]+)%s*|%s*([^|]+)')
+                        if p_time and p_time ~= '' then
+                            time_txt = p_time:gsub('%s+$', '')
+                        end
+                        local floor_num = tonumber(sess and sess.limbus_floor)
+                        if floor_num and floor_num > 0 then
+                            floor_txt = 'Floor ' .. tostring(math.floor(floor_num))
+                        elseif p_floor and p_floor ~= '' then
+                            local parsed = tonumber((p_floor or ''):match('(%d+)'))
+                            if parsed and parsed > 0 then
+                                floor_txt = 'Floor ' .. tostring(math.floor(parsed))
+                            end
+                        end
+                    end
+                    local header_txt = time_txt
+                    if floor_txt ~= '' then
+                        header_txt = time_txt .. ' | ' .. floor_txt
+                    end
+
+                    local status_col = cfg.visual_colors.HUD_TEXT or DEFAULT_VISUAL_COLORS.HUD_TEXT
+                    local icon_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 30) + 0.5))
+                    local line_h = math.max(tonumber(imgui.GetTextLineHeight()) or 0, icon_size)
+                    local sx, sy = imgui.GetCursorPos()
+                    if type(sx) ~= 'number' then
+                        sx, sy = _get_xy(sx)
+                    end
+                    sx = tonumber(sx) or 0
+                    sy = tonumber(sy) or 0
+
+                    local avail_x2, _ = imgui.GetContentRegionAvail()
+                    if type(avail_x2) ~= 'number' then
+                        avail_x2 = _get_xy(avail_x2)
+                    end
+                    local avail_w2 = tonumber(avail_x2) or 0
+
+                    local function text_width(text)
+                        local tw, _ = imgui.CalcTextSize(text or '')
+                        if type(tw) ~= 'number' then
+                            tw = _get_xy(tw)
+                        end
+                        return tonumber(tw) or 0
+                    end
+
+                    local icon_x = sx + math.max(0, avail_w2 - icon_size)
+
+                    local text_y = sy + math.max(0, (line_h - (tonumber(imgui.GetTextLineHeight()) or line_h)) * 0.5)
+                    local icon_y = sy + math.max(0, (line_h - icon_size) * 0.5)
+
+                    imgui.SetCursorPosX(sx)
+                    imgui.SetCursorPosY(text_y)
+                    imgui.TextColored(status_col, header_txt)
+
+                    imgui.SetCursorPosX(icon_x)
+                    imgui.SetCursorPosY(icon_y)
+                    local ok_icon, drew_icon = pcall(draw_gate_icon, sess, icon_size)
                     if not (ok_icon and drew_icon) then
                         local ok_col = cfg.visual_colors.STATE_OK or DEFAULT_VISUAL_COLORS.STATE_OK
-                        local txt_col = cfg.visual_colors.HUD_TEXT or DEFAULT_VISUAL_COLORS.HUD_TEXT
-                        imgui.TextColored(gate_open and ok_col or txt_col, gate_open and 'Open' or 'Closed')
+                        local fall_col = status_col
+                        local fall_txt = is_transition and 'Transition' or (gate_open and 'Open' or 'Closed')
+                        local fw = text_width(fall_txt)
+                        imgui.SetCursorPosX(sx + math.max(0, avail_w2 - fw))
+                        imgui.SetCursorPosY(text_y)
+                        imgui.TextColored(is_transition and fall_col or (gate_open and ok_col or fall_col), fall_txt)
                     end
+
+                    imgui.SetCursorPosX(pad)
+                    imgui.SetCursorPosY(sy + line_h + 2)
                 else
                     imgui.TextColored(cfg.visual_colors.HUD_TEXT, t)
                 end
@@ -1674,8 +2244,8 @@ function ui.render(sess, cfg)
         cfg.visible = false
         persist(cfg)
         imgui.End()
-        if pushed_window_bg > 0 then
-            imgui.PopStyleColor(pushed_window_bg)
+        if pushed_visual_bg > 0 then
+            imgui.PopStyleColor(pushed_visual_bg)
         end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
@@ -1688,8 +2258,8 @@ function ui.render(sess, cfg)
 
     if mode_toggled then
         imgui.End()
-        if pushed_window_bg > 0 then
-            imgui.PopStyleColor(pushed_window_bg)
+        if pushed_visual_bg > 0 then
+            imgui.PopStyleColor(pushed_visual_bg)
         end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
@@ -1749,6 +2319,17 @@ function ui.render(sess, cfg)
         end
     end
 
+    local full_body_child = false
+    if not ui.compact then
+        local ok_child, _ = pcall(imgui.BeginChild, 'treasure_full_body', { 0, 0 }, false)
+        if ok_child then
+            full_body_child = true
+        else
+            imgui.BeginChild('treasure_full_body', { 0, 0 }, false)
+            full_body_child = true
+        end
+    end
+
     if not ui.compact then
         local event_id = tostring(ui.selected_event or (sess and sess.event_id) or ui.active_event or 'dynamis')
         local status_top = event_router.top_left_status(ui, {
@@ -1771,18 +2352,41 @@ function ui.render(sess, cfg)
             if ui._history_event ~= history_event then
                 ui._history_event = history_event
                 ui.history_idx = 0
+                ui.history_file = nil
                 ui.history_session = nil
+                ui._history_combo_open = false
+                ui._history_files = nil
             end
-            local files = store.list_sessions({ event_id = history_event }) or {}
+            local live_files = store.list_sessions({ event_id = history_event }) or {}
+            if not ui._history_combo_open then
+                ui._history_files = nil
+            end
+            local files = live_files
+            if ui._history_combo_open and type(ui._history_files) == 'table' and #ui._history_files > 0 then
+                files = ui._history_files
+            end
             if #files > 0 then
                 -- Etiqueta que muestra la selección actual. la opción 0 representa
                 -- el estado actual.
-                local preview
-                if ui.history_idx > 0 and ui.history_idx <= #files then
-                    preview = files[ui.history_idx]
-                else
-                    preview = 'Current'
+                local selected_name = ui.history_file
+                if (selected_name == nil or selected_name == '') and ui.history_idx > 0 and ui.history_idx <= #files then
+                    selected_name = files[ui.history_idx]
                 end
+                local selected_idx = 0
+                if selected_name and selected_name ~= '' then
+                    for i, fname in ipairs(files) do
+                        if fname == selected_name then
+                            selected_idx = i
+                            break
+                        end
+                    end
+                    if selected_idx == 0 then
+                        selected_name = nil
+                    end
+                end
+                ui.history_idx = selected_idx
+                ui.history_file = selected_name
+                local preview = selected_name or 'Current'
 
                 local sel_bg = { 0.10, 0.10, 0.11, 0.96 }
                 local sel_hover = { 0.14, 0.14, 0.15, 0.98 }
@@ -1820,28 +2424,37 @@ function ui.render(sess, cfg)
                 end
 
                 imgui.PushItemWidth(460)
-                if imgui.BeginCombo('##history_combo', preview) then
-                    local sel0 = (ui.history_idx == 0)
+                local combo_open = imgui.BeginCombo('##history_combo', preview)
+                if combo_open then
+                    ui._history_combo_open = true
+                    if type(ui._history_files) ~= 'table' then
+                        ui._history_files = {}
+                        for i = 1, #live_files do
+                            ui._history_files[i] = live_files[i]
+                        end
+                    end
+                    local list_files = ui._history_files
+
+                    local sel0 = (ui.history_file == nil or ui.history_file == '')
                     if imgui.Selectable('Current', sel0) then
                         ui.history_idx = 0
+                        ui.history_file = nil
                         ui.history_session = nil
                     end
-                    if sel0 then
-                        imgui.SetItemDefaultFocus()
-                    end
                     -- Opciones para cada archivo
-                    for i, fname in ipairs(files) do
-                        local selected = (ui.history_idx == i)
+                    for i, fname in ipairs(list_files) do
+                        local selected = (ui.history_file == fname)
                         if imgui.Selectable(fname, selected) then
                             ui.history_idx = i
+                            ui.history_file = fname
                             local sess_loaded = store.load_file(fname)
                             ui.history_session = sess_loaded
                         end
-                        if selected then
-                            imgui.SetItemDefaultFocus()
-                        end
                     end
                     imgui.EndCombo()
+                else
+                    ui._history_combo_open = false
+                    ui._history_files = nil
                 end
                 imgui.PopItemWidth()
                 if sel_var > 0 then
@@ -1859,33 +2472,7 @@ function ui.render(sess, cfg)
     -- TAB BAR principal
     ----------------------------------------------------------------
         -- Event-specific tabs/body.
-    local event_ctx = {
-        imgui = imgui,
-        ui = ui,
-        sess = sess,
-        event_id = ui.selected_event or (sess and sess.event_id) or ui.active_event,
-        cfg = cfg,
-        C = C,
-        V = cfg.visual_colors,
-        TF_BORDER = TF_BORDER,
-        keys = keys,
-        is_cur = is_cur,
-        is_hundo = is_hundo,
-        title = title,
-        lost_name = lost_name,
-        to_units = to_units,
-        base_cur = base_cur,
-        display_cur = display_cur,
-        is_valid_player_name = is_valid_player_name,
-        default_event_minutes = default_event_minutes,
-        fmt_n = fmt_n,
-        store = store,
-        chip_color_for_item = function(name)
-            return chip_color_for_item(name, cfg)
-        end,
-        draw_treasure_table = draw_treasure_table,
-        draw_settings_panel = draw_settings_panel,
-    }
+    local event_ctx = build_event_context(sess, cfg)
 
     local tab_style_colors, tab_style_vars = push_tabs_style(event_ctx.event_id, cfg, C)
     event_router.render(ui, event_ctx)
@@ -1896,9 +2483,13 @@ function ui.render(sess, cfg)
         imgui.PopStyleColor(tab_style_colors)
     end
 
+    if full_body_child then
+        imgui.EndChild()
+    end
+
     imgui.End()
-    if pushed_window_bg > 0 then
-        imgui.PopStyleColor(pushed_window_bg)
+    if pushed_visual_bg > 0 then
+        imgui.PopStyleColor(pushed_visual_bg)
     end
     if pushed_style > 0 then
         imgui.PopStyleVar(pushed_style)

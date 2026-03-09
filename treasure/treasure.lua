@@ -314,6 +314,16 @@ end
 local DEFAULT_CONFIG = {
     visible = true, theme = 'Default', alpha = 0.90, timeout = 30,
     colors = {
+        QTY = { 1, 1, 1, 1 }, CUR = { 0.1725, 1, 0.0431, 1 },
+        ITEM = { 0, 1, 0.9961, 1 }, HUNDO = { 1, 0.84, 0, 1 },
+        NAME = { 0.55, 0.78, 1, 1 }, LOST = { 1, 0.35, 0.35, 1 },
+    },
+    colors_dynamis = {
+        QTY = { 1, 1, 1, 1 }, CUR = { 0.1725, 1, 0.0431, 1 },
+        ITEM = { 0, 1, 0.9961, 1 }, HUNDO = { 1, 0.84, 0, 1 },
+        NAME = { 0.55, 0.78, 1, 1 }, LOST = { 1, 0.35, 0.35, 1 },
+    },
+    colors_limbus = {
         QTY = { 1, 1, 1, 1 }, CUR = { 1, 0.84, 0, 1 },
         ITEM = { 0, 1, 0.9961, 1 }, HUNDO = { 1, 0.84, 0, 1 },
         NAME = { 0.55, 0.78, 1, 1 }, LOST = { 1, 0.35, 0.35, 1 },
@@ -340,9 +350,19 @@ local DEFAULT_CONFIG = {
         STATE_OK = { 0.24, 0.86, 0.52, 1.00 },
         STATE_ALERT = { 1.00, 0.30, 0.31, 1.00 },
         WINDOW_BG = { 0.07, 0.08, 0.10, 0.94 },
+        CONTENT_BG = { 0.10, 0.11, 0.13, 0.90 },
         HEADER_BG = { 0.09, 0.09, 0.10, 0.96 },
         HEADER_BORDER = { 0.45, 0.41, 0.30, 0.65 },
         HEADER_TEXT = { 0.90, 0.90, 0.91, 1.00 },
+        CONTROL_BG = { 0.13, 0.14, 0.16, 0.92 },
+        CONTROL_BG_HOVERED = { 0.16, 0.18, 0.21, 0.95 },
+        CONTROL_BG_ACTIVE = { 0.20, 0.22, 0.26, 0.98 },
+        TAB_BG = { 0.10, 0.10, 0.11, 0.96 },
+        TAB_BG_HOVERED = { 0.14, 0.15, 0.18, 0.98 },
+        TAB_BG_ACTIVE = { 0.18, 0.20, 0.24, 0.99 },
+        TAB_BG_UNFOCUSED = { 0.08, 0.08, 0.09, 0.92 },
+        TAB_BG_UNFOCUSED_ACTIVE = { 0.13, 0.14, 0.17, 0.95 },
+        SEPARATOR = { 0.22, 0.22, 0.24, 0.85 },
     },
     button_style = {
         rounding = 9.0,
@@ -350,12 +370,15 @@ local DEFAULT_CONFIG = {
         border_selected = 1.8,
         border_idle = 0.0,
         selected_bg = { 0.22, 0.20, 0.16, 0.96 },
-        selected_border = { 0.80, 0.69, 0.44, 0.92 },
+        selected_border = { 0.180392, 0.768627, 0.709804, 0.901961 }, -- legacy/fallback (Limbus) #2EC4B5E6
+        selected_border_dynamis = { 0.180392, 0.768627, 0.709804, 0.901961 }, -- #2EC4B5E6
+        selected_border_limbus = { 1.000000, 0.701961, 0.278431, 0.901961 }, -- #FFB347E6
         selected_text = { 0.94, 0.90, 0.76, 1.00 },
         idle_bg = { 0.08, 0.08, 0.09, 0.95 },
         idle_border = { 0.35, 0.33, 0.28, 0.72 },
         idle_text = { 0.78, 0.78, 0.78, 1.00 },
     },
+    limbus_icon_size = 30.0,
     layout = {
         full = {
             window = { x = 536, y = 129, w = 605, h = 314 },
