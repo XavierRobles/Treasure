@@ -7,25 +7,32 @@ local timeutil = require('timeutil')
 local parser = {}
 
 ------------------------ sesión
-function parser.new_session(zid)
+function parser.new_session(zid, opts)
+    opts = opts or {}
+    local event_id = tostring(opts.event_id or 'dynamis'):lower()
     local now = os.time()
-    local max_min = core.dynamis_max_minutes(zid)
 
-    return {
+    local sess = {
+        event_id = event_id,
         zone_id = zid,
         start_time = now,
         drops = core.new_drop_state(),
         paused = nil,
         management = {},
+    }
 
-        dynamis_timer = {
+    if event_id == 'dynamis' then
+        local max_min = core.dynamis_max_minutes(zid)
+        sess.dynamis_timer = {
             expel_at = nil,          -- os.time() absolute
             pending_ext = 0,         -- seconds
             fallback_end_at = now + (max_min * 60),
             desynced = false,
             last_sync_at = nil,
-        },
-    }
+        }
+    end
+
+    return sess
 end
 
 
@@ -251,6 +258,10 @@ local function handle_dynamis_timer_line(line, s)
     if not s then
         return false
     end
+    local ev = tostring(s.event_id or 'dynamis'):lower()
+    if ev ~= 'dynamis' then
+        return false
+    end
 
     local l = (line or ''):lower()
     if l == '' then
@@ -301,6 +312,7 @@ end
 local function handle(line, s)
     line = strip(line)
     local line_l = (line or ''):lower()
+    local event_id = tostring((s and s.event_id) or 'dynamis'):lower()
 
     -- Ignore addon-generated chat output.
     if line_l:find('[treasure]', 1, true) then
@@ -311,61 +323,63 @@ local function handle(line, s)
         return
     end
 
-    ------------------------------------------------------ STEAL (personal / local player only)
-    local use_name = line_l:match(STEAL_USE)
-    if use_name then
-        if is_local_player_line(s, use_name) then
-            if should_skip_steal_event('use', use_name) then
-                return
-            end
-            local sp = ensure_steal_personal_state(s)
-            sp.attempts = sp.attempts + 1
-            sp.pending = sp.pending + 1
-            store.save(s)
-            return
-        end
-    end
-
-    local fail_name = line_l:match(STEAL_FAIL) or line_l:match(STEAL_FAIL_ALT)
-    if fail_name then
-        if is_local_player_line(s, fail_name) then
-            if should_skip_steal_event('fail', fail_name) then
-                return
-            end
-            local sp = ensure_steal_personal_state(s)
-            if sp.pending > 0 then
-                sp.pending = sp.pending - 1
-            else
+    ------------------------------------------------------ STEAL (Dynamis only, personal / local player)
+    if event_id == 'dynamis' then
+        local use_name = line_l:match(STEAL_USE)
+        if use_name then
+            if is_local_player_line(s, use_name) then
+                if should_skip_steal_event('use', use_name) then
+                    return
+                end
+                local sp = ensure_steal_personal_state(s)
                 sp.attempts = sp.attempts + 1
-            end
-            sp.failed = sp.failed + 1
-            store.save(s)
-            return
-        end
-    end
-
-    local steal_name, item_raw = line_l:match(STEAL_OK)
-    if steal_name and item_raw then
-        if is_local_player_line(s, steal_name) then
-            local clean_item = clean(strip(item_raw))
-            if should_skip_steal_event('ok', steal_name, clean_item) then
+                sp.pending = sp.pending + 1
+                store.save(s)
                 return
             end
-            local sp = ensure_steal_personal_state(s)
-            if sp.pending > 0 then
-                sp.pending = sp.pending - 1
-            else
-                sp.attempts = sp.attempts + 1
-            end
-            sp.success = sp.success + 1
+        end
 
-            local label = steal_currency_label(clean_item)
-            if label then
-                sp.by_currency[label] = (sp.by_currency[label] or 0) + 1
+        local fail_name = line_l:match(STEAL_FAIL) or line_l:match(STEAL_FAIL_ALT)
+        if fail_name then
+            if is_local_player_line(s, fail_name) then
+                if should_skip_steal_event('fail', fail_name) then
+                    return
+                end
+                local sp = ensure_steal_personal_state(s)
+                if sp.pending > 0 then
+                    sp.pending = sp.pending - 1
+                else
+                    sp.attempts = sp.attempts + 1
+                end
+                sp.failed = sp.failed + 1
+                store.save(s)
+                return
             end
+        end
 
-            store.save(s)
-            return
+        local steal_name, item_raw = line_l:match(STEAL_OK)
+        if steal_name and item_raw then
+            if is_local_player_line(s, steal_name) then
+                local clean_item = clean(strip(item_raw))
+                if should_skip_steal_event('ok', steal_name, clean_item) then
+                    return
+                end
+                local sp = ensure_steal_personal_state(s)
+                if sp.pending > 0 then
+                    sp.pending = sp.pending - 1
+                else
+                    sp.attempts = sp.attempts + 1
+                end
+                sp.success = sp.success + 1
+
+                local label = steal_currency_label(clean_item)
+                if label then
+                    sp.by_currency[label] = (sp.by_currency[label] or 0) + 1
+                end
+
+                store.save(s)
+                return
+            end
         end
     end
 

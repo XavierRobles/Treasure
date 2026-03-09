@@ -3,13 +3,87 @@
 ---------------------------------------------------------------------------
 local imgui = require('imgui')
 local ImGuiCol = imgui.Col
+local FFI_OK, ffi = pcall(require, 'ffi')
+local D3D8_OK, d3d8 = pcall(require, 'd3d8')
+local D3D8_DEVICE = (D3D8_OK and d3d8 and d3d8.get_device) and d3d8.get_device() or nil
+
+local COL_BUTTON = (ImGuiCol and ImGuiCol.Button)
+        or rawget(imgui, 'Col_Button')
+        or rawget(_G, 'ImGuiCol_Button')
+local COL_BUTTON_HOVERED = (ImGuiCol and ImGuiCol.ButtonHovered)
+        or rawget(imgui, 'Col_ButtonHovered')
+        or rawget(_G, 'ImGuiCol_ButtonHovered')
+local COL_BUTTON_ACTIVE = (ImGuiCol and ImGuiCol.ButtonActive)
+        or rawget(imgui, 'Col_ButtonActive')
+        or rawget(_G, 'ImGuiCol_ButtonActive')
+local COL_BORDER = (ImGuiCol and ImGuiCol.Border)
+        or rawget(imgui, 'Col_Border')
+        or rawget(_G, 'ImGuiCol_Border')
+local COL_TEXT = (ImGuiCol and ImGuiCol.Text)
+        or rawget(imgui, 'Col_Text')
+        or rawget(_G, 'ImGuiCol_Text')
+local COL_WINDOW_BG = (ImGuiCol and ImGuiCol.WindowBg)
+        or rawget(imgui, 'Col_WindowBg')
+        or rawget(_G, 'ImGuiCol_WindowBg')
+local COL_CHILD_BG = (ImGuiCol and ImGuiCol.ChildBg)
+        or rawget(imgui, 'Col_ChildBg')
+        or rawget(_G, 'ImGuiCol_ChildBg')
+local COL_FRAME_BG = (ImGuiCol and ImGuiCol.FrameBg)
+        or rawget(imgui, 'Col_FrameBg')
+        or rawget(_G, 'ImGuiCol_FrameBg')
+local COL_FRAME_BG_HOVERED = (ImGuiCol and ImGuiCol.FrameBgHovered)
+        or rawget(imgui, 'Col_FrameBgHovered')
+        or rawget(_G, 'ImGuiCol_FrameBgHovered')
+local COL_FRAME_BG_ACTIVE = (ImGuiCol and ImGuiCol.FrameBgActive)
+        or rawget(imgui, 'Col_FrameBgActive')
+        or rawget(_G, 'ImGuiCol_FrameBgActive')
+local COL_TAB = (ImGuiCol and ImGuiCol.Tab)
+        or rawget(imgui, 'Col_Tab')
+        or rawget(_G, 'ImGuiCol_Tab')
+local COL_TAB_HOVERED = (ImGuiCol and ImGuiCol.TabHovered)
+        or rawget(imgui, 'Col_TabHovered')
+        or rawget(_G, 'ImGuiCol_TabHovered')
+local COL_TAB_ACTIVE = (ImGuiCol and ImGuiCol.TabActive)
+        or rawget(imgui, 'Col_TabActive')
+        or rawget(_G, 'ImGuiCol_TabActive')
+local COL_TAB_UNFOCUSED = (ImGuiCol and ImGuiCol.TabUnfocused)
+        or rawget(imgui, 'Col_TabUnfocused')
+        or rawget(_G, 'ImGuiCol_TabUnfocused')
+local COL_TAB_UNFOCUSED_ACTIVE = (ImGuiCol and ImGuiCol.TabUnfocusedActive)
+        or rawget(imgui, 'Col_TabUnfocusedActive')
+        or rawget(_G, 'ImGuiCol_TabUnfocusedActive')
+local COL_SEPARATOR = (ImGuiCol and ImGuiCol.Separator)
+        or rawget(imgui, 'Col_Separator')
+        or rawget(_G, 'ImGuiCol_Separator')
+
+local SV_FRAME_ROUNDING = rawget(_G, 'ImGuiStyleVar_FrameRounding')
+        or rawget(imgui, 'ImGuiStyleVar_FrameRounding')
+        or rawget(imgui, 'StyleVar_FrameRounding')
+        or (imgui.StyleVar and imgui.StyleVar.FrameRounding)
+        or 11
+local SV_FRAME_BORDER_SIZE = rawget(_G, 'ImGuiStyleVar_FrameBorderSize')
+        or rawget(imgui, 'ImGuiStyleVar_FrameBorderSize')
+        or rawget(imgui, 'StyleVar_FrameBorderSize')
+        or (imgui.StyleVar and imgui.StyleVar.FrameBorderSize)
+        or 12
+local SV_CHILD_ROUNDING = rawget(_G, 'ImGuiStyleVar_ChildRounding')
+        or rawget(imgui, 'ImGuiStyleVar_ChildRounding')
+        or rawget(imgui, 'StyleVar_ChildRounding')
+        or (imgui.StyleVar and imgui.StyleVar.ChildRounding)
+        or 14
+local SV_TAB_ROUNDING = rawget(_G, 'ImGuiStyleVar_TabRounding')
+        or rawget(imgui, 'ImGuiStyleVar_TabRounding')
+        or rawget(imgui, 'StyleVar_TabRounding')
+        or (imgui.StyleVar and imgui.StyleVar.TabRounding)
+
+local GATE_ICONS = { loaded = false, open = nil, closed = nil }
 
 -- libs ----------------------------------------------------------
 local SETTINGS_OK, settings = pcall(require, 'settings')   -- settings.lua
 local THEMES_OK, ADDON_THEMES = pcall(require, 'ev_themes')  -- palette file
 local store = require('store')
-local core = require('core')
 local timeutil = require('timeutil')
+local event_router = require('ui_event_router')
 -------------------------------------------------------------------------------
 
 --------------------------------------------------------------------
@@ -140,17 +214,40 @@ local function sanitize_tre_cols(cols, mode)
 end
 
 -- Guarda posición, tamaño y anchos de columnas --------------------
-local function save_layout(cfg, mode)
+local function save_layout(cfg, mode, win_snapshot)
     cfg.layout = cfg.layout or {}
     cfg.layout[mode] = cfg.layout[mode] or {}
 
     -- posición y tamaño
-    local px, py = imgui.GetWindowPos()                  -- devuelve 2 números
-    if type(px) ~= 'number' then
-        -- fallback
-        px, py = _get_xy(px)
+    local px, py, wx, wy
+    if type(win_snapshot) == 'table' then
+        px = win_snapshot.x
+        py = win_snapshot.y
+        wx = win_snapshot.w
+        wy = win_snapshot.h
+    else
+        px, py = imgui.GetWindowPos()                  -- devuelve 2 números
+        if type(px) ~= 'number' then
+            -- fallback
+            px, py = _get_xy(px)
+        end
+        wx, wy = imgui.GetWindowSize()
+        if type(wx) ~= 'number' then
+            wx, wy = _get_xy(wx)
+        end
     end
-    local wx, wy = imgui.GetWindowSize()
+    px = tonumber(px) or 0
+    py = tonumber(py) or 0
+    wx = tonumber(wx) or 0
+    wy = tonumber(wy) or 0
+    if mode == 'full' then
+        -- Protect full profile from accidental tiny saves (eg. transient UI frame).
+        wx = math.max(520, wx)
+        wy = math.max(320, wy)
+    else
+        wx = math.max(220, wx)
+        wy = math.max(120, wy)
+    end
     cfg.layout[mode].window = { x = px, y = py, w = wx, h = wy }
 
     -- Guard against cross-mode overwrites when toggling.
@@ -171,8 +268,41 @@ local function load_layout(cfg, mode)
     end
 
     if prof.window then
-        imgui.SetNextWindowPos({ prof.window.x, prof.window.y })
-        imgui.SetNextWindowSize({ prof.window.w, prof.window.h })
+        local repaired = false
+        local x = tonumber(prof.window.x)
+        local y = tonumber(prof.window.y)
+        local w = tonumber(prof.window.w)
+        local h = tonumber(prof.window.h)
+        if mode == 'full' then
+            if w and w < 520 then
+                w = 520
+                repaired = true
+            end
+            if h and h < 320 then
+                h = 320
+                repaired = true
+            end
+        else
+            if w and w < 220 then
+                w = 220
+                repaired = true
+            end
+            if h and h < 120 then
+                h = 120
+                repaired = true
+            end
+        end
+        if repaired then
+            prof.window.w = w
+            prof.window.h = h
+            persist(cfg)
+        end
+        if x and y then
+            imgui.SetNextWindowPos({ x, y })
+        end
+        if w and h and w > 64 and h > 64 then
+            imgui.SetNextWindowSize({ w, h })
+        end
     end
     cfg.tre_col_w = sanitize_tre_cols(prof.cols, mode)
     cfg._tre_init = false
@@ -184,6 +314,10 @@ end
 -- Helpers to fetch ImGui / Ashita constants
 --------------------------------------------------------------------
 local function WF(name)
+    local gkey = 'ImGuiWindowFlags_' .. tostring(name)
+    if rawget(_G, gkey) then
+        return rawget(_G, gkey)
+    end
     if rawget(imgui, name) then
         return imgui[name]
     end
@@ -211,12 +345,160 @@ local TF_BORDER = imgui.TableFlags_BordersOuter
 
 local DEFAULT_COLORS = {
     NAME = { 0.55, 0.78, 1.00, 1 },
-    ITEM = { 1, 1, 1, 1 },
-    CUR = { 0.85, 0.85, 0.85, 1 },
+    ITEM = { 0, 1, 0.9961, 1 },
+    CUR = { 1, 0.84, 0, 1 },
     HUNDO = { 1, 0.84, 0, 1 },
     QTY = { 1, 1, 1, 1 },
     LOST = { 1, 0.35, 0.35, 1 },
 }
+
+local DEFAULT_CHIP_COLORS = {
+    magenta = { 0.5255, 0.3373, 0.8471, 1.0 },   -- #8656D8
+    smoky = { 0.4431, 0.5098, 0.5922, 1.0 },     -- #718297
+    emerald = { 0.2118, 0.5608, 0.4510, 1.0 },   -- #368F73
+    scarlet = { 0.5961, 0.3255, 0.1373, 1.0 },   -- #985323
+    ivory = { 0.6549, 0.5216, 0.0235, 1.0 },     -- #A78506
+    charcoal = { 0.4392, 0.5059, 0.5882, 1.0 },  -- #708196
+    smalt = { 0.1294, 0.4980, 0.7176, 1.0 },     -- #217FB7
+    orchid = { 0.5373, 0.3412, 0.8627, 1.0 },    -- #8957DC
+    cerulean = { 0.1333, 0.5216, 0.7490, 1.0 },  -- #2285BF
+    silver = { 0.4745, 0.5373, 0.6196, 1.0 },    -- #79899E
+    metal = { 0.62, 0.66, 0.72, 1.0 },
+    niveous = { 0.93, 0.96, 1.00, 1.0 },
+    crepuscular = { 0.60, 0.54, 0.68, 1.0 },
+}
+
+local CHIP_COLOR_KEYS = {
+    'magenta', 'smoky', 'emerald', 'scarlet', 'ivory',
+    'charcoal', 'smalt', 'orchid', 'cerulean', 'silver',
+    'metal', 'niveous', 'crepuscular',
+}
+
+local CHIP_COLOR_LABELS = {
+    magenta = 'Magenta Chip',
+    smoky = 'Smoky Chip',
+    emerald = 'Emerald Chip',
+    scarlet = 'Scarlet Chip',
+    ivory = 'Ivory Chip',
+    charcoal = 'Charcoal Chip',
+    smalt = 'Smalt Chip',
+    orchid = 'Orchid Chip',
+    cerulean = 'Cerulean Chip',
+    silver = 'Silver Chip',
+    metal = 'Metal Chip',
+    niveous = 'Niveous Chip',
+    crepuscular = 'Crepuscular Chip',
+}
+
+local DEFAULT_VISUAL_COLORS = {
+    HUD_TEXT = { 0.84, 0.87, 0.91, 1.00 },
+    EVENT_DYNAMIS = { 1.00, 0.62, 0.26, 0.90 },
+    EVENT_LIMBUS = { 0.18, 0.77, 0.71, 0.90 },
+    STATE_OK = { 0.24, 0.86, 0.52, 1.00 },
+    STATE_ALERT = { 1.00, 0.30, 0.31, 1.00 },
+    WINDOW_BG = { 0.07, 0.08, 0.10, 0.94 },
+    HEADER_BG = { 0.09, 0.09, 0.10, 0.96 },
+    HEADER_BORDER = { 0.45, 0.41, 0.30, 0.65 },
+    HEADER_TEXT = { 0.90, 0.90, 0.91, 1.00 },
+}
+
+local DEFAULT_BUTTON_STYLE = {
+    rounding = 9.0,
+    height = 25.0,
+    border_selected = 1.8,
+    border_idle = 0.0,
+    selected_bg = { 0.22, 0.20, 0.16, 0.96 },
+    selected_border = { 0.80, 0.69, 0.44, 0.92 },
+    selected_text = { 0.94, 0.90, 0.76, 1.00 },
+    idle_bg = { 0.08, 0.08, 0.09, 0.95 },
+    idle_border = { 0.35, 0.33, 0.28, 0.72 },
+    idle_text = { 0.78, 0.78, 0.78, 1.00 },
+}
+
+local function copy_rgba(src)
+    return { src[1], src[2], src[3], src[4] }
+end
+
+local LEGACY_CUR_DEFAULT = { 0.1725, 1.0, 0.0431, 1.0 }
+local LEGACY_ITEM_DEFAULT = { 1.0, 1.0, 1.0, 1.0 }
+
+local function rgba_equals(a, b, eps)
+    eps = eps or 0.0005
+    if type(a) ~= 'table' or type(b) ~= 'table' then
+        return false
+    end
+    return math.abs((tonumber(a[1]) or 0) - (tonumber(b[1]) or 0)) <= eps
+            and math.abs((tonumber(a[2]) or 0) - (tonumber(b[2]) or 0)) <= eps
+            and math.abs((tonumber(a[3]) or 0) - (tonumber(b[3]) or 0)) <= eps
+            and math.abs((tonumber(a[4]) or 0) - (tonumber(b[4]) or 0)) <= eps
+end
+
+local function sanitize_rgba(src, fallback)
+    local out = {}
+    for i = 1, 4 do
+        local v = tonumber(src and src[i])
+        if v == nil then
+            v = fallback[i]
+        end
+        if v < 0 then
+            v = 0
+        elseif v > 1 then
+            v = 1
+        end
+        out[i] = v
+    end
+    return out
+end
+
+local function tint_rgba(src, mul, add_alpha)
+    local out = {}
+    for i = 1, 4 do
+        local v = tonumber(src and src[i]) or 0
+        if i <= 3 then
+            v = v * (mul or 1)
+        elseif add_alpha then
+            v = v + add_alpha
+        end
+        if v < 0 then
+            v = 0
+        elseif v > 1 then
+            v = 1
+        end
+        out[i] = v
+    end
+    return out
+end
+
+local function mix_rgba(a, b, t)
+    local ta = 1.0 - (tonumber(t) or 0.5)
+    local tb = tonumber(t) or 0.5
+    local out = {}
+    for i = 1, 4 do
+        local va = tonumber(a and a[i]) or 0
+        local vb = tonumber(b and b[i]) or 0
+        local v = (va * ta) + (vb * tb)
+        if v < 0 then
+            v = 0
+        elseif v > 1 then
+            v = 1
+        end
+        out[i] = v
+    end
+    return out
+end
+
+local function clamp_num(v, min_v, max_v, fallback)
+    local n = tonumber(v)
+    if n == nil then
+        n = tonumber(fallback) or min_v
+    end
+    if n < min_v then
+        n = min_v
+    elseif n > max_v then
+        n = max_v
+    end
+    return n
+end
 
 --------------------------------------------------------------------
 -- Small helpers
@@ -270,6 +552,28 @@ local function is_cur(name)
             or (s:find('byne bill') ~= nil)
             or (s:find('silverpiece') ~= nil)
             or (s:find('jadeshell') ~= nil)
+            or (s:find('beastcoin') ~= nil)
+end
+
+local CHIP_MATCH_ORDER = {
+    'magenta', 'smoky', 'smokey', 'emerald', 'scarlet', 'ivory',
+    'charcoal', 'smalt', 'orchid', 'cerulean', 'silver',
+    'metal', 'niveous', 'crepuscular',
+}
+
+local function chip_color_for_item(name, cfg)
+    local s = norm(name or '')
+    if s:find('chip', 1, true) == nil then
+        return nil
+    end
+    local map = (cfg and cfg.chip_colors) or DEFAULT_CHIP_COLORS
+    for _, key in ipairs(CHIP_MATCH_ORDER) do
+        if s:find(key, 1, true) then
+            local k = (key == 'smokey') and 'smoky' or key
+            return (map and map[k]) or DEFAULT_CHIP_COLORS[k]
+        end
+    end
+    return nil
 end
 
 local function default_event_minutes(sess)
@@ -292,46 +596,6 @@ local function default_event_minutes(sess)
 
     -- Safe default
     return 240
-end
-
-
-local function fmt_hms(total_seconds)
-    local s = math.max(0, tonumber(total_seconds) or 0)
-    local h = math.floor(s / 3600)
-    s = s - (h * 3600)
-    local m = math.floor(s / 60)
-    s = s - (m * 60)
-    return string.format('%02d:%02d:%02d', h, m, s)
-end
-
-local function dynamis_time_left_text(sess)
-    if not (sess and sess.dynamis_timer) then
-        return nil
-    end
-
-    local now = os.time()
-    local expel_at = tonumber(sess.dynamis_timer.expel_at)
-    local fallback_end = tonumber(sess.dynamis_timer.fallback_end_at)
-
-    if not fallback_end then
-        local max_min = core.dynamis_max_minutes(sess.zone_id)
-        fallback_end = (tonumber(sess.start_time) or now) + (max_min * 60)
-        sess.dynamis_timer.fallback_end_at = fallback_end
-    end
-
-    local rem
-    if expel_at then
-        rem = expel_at - now
-        if rem <= 0 then
-            sess.dynamis_timer.desynced = true
-            rem = fallback_end - now
-        end
-    else
-        rem = fallback_end - now
-    end
-
-    local prefix = (sess.dynamis_timer.desynced and '~ ' or '')
-    return prefix .. fmt_hms(rem)
 end
 
 
@@ -381,14 +645,130 @@ local WF_FRAMELESS = bit.bor(
 local function push_frameless_style()
     local n = 0
     if S('WindowBorderSize') ~= 0 then
-        imgui.PushStyleVar(S('WindowBorderSize'), 0);
+        imgui.PushStyleVar(S('WindowBorderSize'), 0.8);
         n = n + 1
     end
     if S('WindowRounding') ~= 0 then
-        imgui.PushStyleVar(S('WindowRounding'), 0);
+        imgui.PushStyleVar(S('WindowRounding'), 6.0);
+        n = n + 1
+    end
+    if S('ChildRounding') ~= 0 then
+        imgui.PushStyleVar(S('ChildRounding'), 5.0);
+        n = n + 1
+    end
+    if S('FrameRounding') ~= 0 then
+        imgui.PushStyleVar(S('FrameRounding'), 5.0);
+        n = n + 1
+    end
+    if S('PopupRounding') ~= 0 then
+        imgui.PushStyleVar(S('PopupRounding'), 5.0);
         n = n + 1
     end
     return n
+end
+
+local function ensure_gate_icons_loaded()
+    if GATE_ICONS.loaded then
+        return
+    end
+    GATE_ICONS.loaded = true
+
+    if not (FFI_OK and D3D8_OK and d3d8 and D3D8_DEVICE) then
+        return
+    end
+
+    pcall(function()
+        ffi.C.D3DXCreateTextureFromFileInMemoryEx(nil, nil, 0, 0, 0, 0, 0, ffi.C.D3DFMT_A8R8G8B8, ffi.C.D3DPOOL_MANAGED, ffi.C.D3DX_DEFAULT, ffi.C.D3DX_DEFAULT, 0, nil, nil, nil)
+    end)
+    pcall(function()
+        ffi.cdef([[
+            HRESULT __stdcall D3DXCreateTextureFromFileA(IDirect3DDevice8* pDevice, const char* pSrcFile, IDirect3DTexture8** ppTexture);
+        ]])
+    end)
+
+    local function load_texture(file_path)
+        local out = ffi.new('IDirect3DTexture8*[1]')
+        local ok, hr = pcall(function()
+            return ffi.C.D3DXCreateTextureFromFileA(D3D8_DEVICE, file_path, out)
+        end)
+        if not ok then
+            return nil
+        end
+        if hr ~= ffi.C.S_OK or out[0] == nil then
+            return nil
+        end
+        return d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', out[0]))
+    end
+
+    local root = tostring(AshitaCore:GetInstallPath() or '')
+    if root == '' then
+        return
+    end
+    GATE_ICONS.open = load_texture(root .. '\\addons\\treasure\\icons\\open.png')
+    GATE_ICONS.closed = load_texture(root .. '\\addons\\treasure\\icons\\closed.png')
+end
+
+local function draw_gate_icon(is_open, size)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+
+    local tex = is_open and GATE_ICONS.open or GATE_ICONS.closed
+    if tex == nil then
+        return false
+    end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    imgui.Image(ptr, { size, size }, { 0, 0 }, { 1, 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 })
+    return true
+end
+
+local function push_tabs_style(event_id, cfg, C)
+    local accent = cfg and cfg.visual_colors and cfg.visual_colors.EVENT_DYNAMIS or { 0.85, 0.58, 0.24, 1.0 }
+    if tostring(event_id or '') == 'limbus' then
+        accent = cfg and cfg.visual_colors and cfg.visual_colors.EVENT_LIMBUS or { 0.22, 0.72, 0.72, 1.0 }
+    end
+
+    -- Tie tab accent to the loot palette for stronger visual identity.
+    local event_tone = (tostring(event_id or '') == 'limbus') and (C and C.HUNDO) or (C and C.ITEM)
+    if event_tone then
+        accent = mix_rgba(accent, event_tone, 0.55)
+    end
+
+    local tab_bg = { 0.10, 0.10, 0.11, 0.96 }
+    local tab_hover = mix_rgba(tab_bg, accent, 0.35)
+    local tab_active = mix_rgba(tab_bg, accent, 0.68)
+    local tab_unfocus = { 0.08, 0.08, 0.09, 0.92 }
+    local tab_unfocus_active = mix_rgba(tab_unfocus, accent, 0.45)
+    local sep = mix_rgba({ 0.22, 0.22, 0.24, 0.85 }, accent, 0.35)
+
+    local pushed_colors = 0
+    local function push_col(id, value)
+        if id ~= nil then
+            imgui.PushStyleColor(id, value)
+            pushed_colors = pushed_colors + 1
+        end
+    end
+    push_col(COL_TAB, tab_bg)
+    push_col(COL_TAB_HOVERED, tab_hover)
+    push_col(COL_TAB_ACTIVE, tab_active)
+    push_col(COL_TAB_UNFOCUSED, tab_unfocus)
+    push_col(COL_TAB_UNFOCUSED_ACTIVE, tab_unfocus_active)
+    push_col(COL_SEPARATOR, sep)
+    push_col(COL_BORDER, sep)
+
+    local pushed_vars = 0
+    if SV_TAB_ROUNDING ~= nil then
+        imgui.PushStyleVar(SV_TAB_ROUNDING, 6.0)
+        pushed_vars = pushed_vars + 1
+    end
+
+    return pushed_colors, pushed_vars
 end
 
 
@@ -453,6 +833,9 @@ end
 local ui = {
     filter = 'All',
     compact = true,
+    active_event = 'dynamis',
+    selected_event = nil,
+    selected_event_user = false,
     history_idx = 0,
     history_session = nil,
     glass_paid = {},
@@ -566,9 +949,10 @@ local function draw_treasure_table (sess, C, cfg)
         local rcol = (rest < 30 and { 1, 0.4, 0.4, 1 })
                 or (rest < 120 and { 1, 0.85, 0.25, 1 })
                 or { 0.3, 1, 0.3, 1 }
+        local chip_col = chip_color_for_item(info.name, cfg)
         local col = is_cur(info.name)
                 and (is_hundo(info.name) and C.HUNDO or C.CUR)
-                or C.ITEM
+                or (chip_col or C.ITEM)
 
         imgui.TextColored(col, title(info.name));
         imgui.NextColumn()
@@ -658,6 +1042,160 @@ local function draw_settings_panel(cfg, C)
     picker('100-piece', 'HUNDO');
     picker('Qty / Total', 'QTY');
     picker('Lost count', 'LOST')
+
+    imgui.Separator()
+    imgui.TextUnformatted('Limbus Chip Colors')
+    local CC = cfg.chip_colors or {}
+    local function cpicker(key)
+        local label = CHIP_COLOR_LABELS[key] or (title(key) .. ' Chip')
+        if imgui.ColorEdit4(label, CC[key], imgui.ColorEditFlags_NoInputs) then
+            changed = true
+        end
+    end
+    for _, key in ipairs(CHIP_COLOR_KEYS) do
+        cpicker(key)
+    end
+    if imgui.SmallButton('Reset chip colors') then
+        for _, key in ipairs(CHIP_COLOR_KEYS) do
+            CC[key] = copy_rgba(DEFAULT_CHIP_COLORS[key])
+        end
+        changed = true
+    end
+    cfg.chip_colors = CC
+
+    imgui.Separator()
+    imgui.TextUnformatted('Visual Theme Colors')
+    local V = cfg.visual_colors or {}
+    local function vpicker(lbl, key)
+        if imgui.ColorEdit4(lbl, V[key], imgui.ColorEditFlags_NoInputs) then
+            changed = true
+        end
+    end
+    vpicker('HUD text', 'HUD_TEXT')
+    vpicker('Dynamis accent', 'EVENT_DYNAMIS')
+    vpicker('Limbus accent', 'EVENT_LIMBUS')
+    vpicker('State OK', 'STATE_OK')
+    vpicker('State alert', 'STATE_ALERT')
+    vpicker('Window background', 'WINDOW_BG')
+    vpicker('Header background', 'HEADER_BG')
+    vpicker('Header border', 'HEADER_BORDER')
+    vpicker('Header text', 'HEADER_TEXT')
+    if imgui.SmallButton('Reset visual colors') then
+        for k, v in pairs(DEFAULT_VISUAL_COLORS) do
+            V[k] = copy_rgba(v)
+        end
+        cfg.visual_colors = V
+        changed = true
+    end
+
+    imgui.Separator()
+    imgui.TextUnformatted('Event Buttons')
+    local B = cfg.button_style or {}
+
+    local rr = { tonumber(B.rounding) or DEFAULT_BUTTON_STYLE.rounding }
+    if imgui.SliderFloat('Roundness (px)', rr, 0.0, 16.0, '%.1f') then
+        B.rounding = rr[1]
+        changed = true
+    end
+    local hh = { tonumber(B.height) or DEFAULT_BUTTON_STYLE.height }
+    if imgui.SliderFloat('Height (px)', hh, 18.0, 36.0, '%.0f') then
+        B.height = hh[1]
+        changed = true
+    end
+    local bs = { tonumber(B.border_selected) or DEFAULT_BUTTON_STYLE.border_selected }
+    if imgui.SliderFloat('Active border', bs, 0.8, 3.0, '%.1f') then
+        B.border_selected = bs[1]
+        changed = true
+    end
+    local bi = { tonumber(B.border_idle) or DEFAULT_BUTTON_STYLE.border_idle }
+    if imgui.SliderFloat('Idle border', bi, 0.0, 2.4, '%.1f') then
+        B.border_idle = bi[1]
+        changed = true
+    end
+
+    local function bpicker(lbl, key)
+        if imgui.ColorEdit4(lbl, B[key], imgui.ColorEditFlags_NoInputs) then
+            changed = true
+        end
+    end
+    bpicker('Active bg', 'selected_bg')
+    bpicker('Active border color', 'selected_border')
+    bpicker('Active text', 'selected_text')
+    bpicker('Idle bg', 'idle_bg')
+    bpicker('Idle border color', 'idle_border')
+    bpicker('Idle text', 'idle_text')
+
+    imgui.TextDisabled('Preview')
+    do
+        local bs_prev = B
+        local function draw_preview_button(id, label, selected, accent)
+            local base = selected and bs_prev.selected_bg or bs_prev.idle_bg
+            local hovered = tint_rgba(base, 1.10, 0.03)
+            local active = tint_rgba(base, 0.86, 0.00)
+
+            local border = selected and mix_rgba(bs_prev.selected_border, accent, 0.65) or bs_prev.idle_border
+            local text_col = selected and mix_rgba(bs_prev.selected_text, accent, 0.75) or bs_prev.idle_text
+            local border_sz = selected and (bs_prev.border_selected or DEFAULT_BUTTON_STYLE.border_selected) or (bs_prev.border_idle or DEFAULT_BUTTON_STYLE.border_idle)
+
+            local pushed = 0
+            if (COL_BUTTON ~= nil) and (COL_BUTTON_HOVERED ~= nil) and (COL_BUTTON_ACTIVE ~= nil) then
+                imgui.PushStyleColor(COL_BUTTON, base)
+                imgui.PushStyleColor(COL_BUTTON_HOVERED, hovered)
+                imgui.PushStyleColor(COL_BUTTON_ACTIVE, active)
+                pushed = pushed + 3
+            end
+            if COL_BORDER ~= nil then
+                imgui.PushStyleColor(COL_BORDER, border)
+                pushed = pushed + 1
+            end
+            if COL_TEXT ~= nil then
+                imgui.PushStyleColor(COL_TEXT, text_col)
+                pushed = pushed + 1
+            end
+
+            local pushed_style = 0
+            if SV_FRAME_ROUNDING ~= nil then
+                imgui.PushStyleVar(SV_FRAME_ROUNDING, bs_prev.rounding or DEFAULT_BUTTON_STYLE.rounding)
+                pushed_style = pushed_style + 1
+            end
+            if SV_FRAME_BORDER_SIZE ~= nil then
+                imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, border_sz)
+                pushed_style = pushed_style + 1
+            end
+
+            local h = bs_prev.height or DEFAULT_BUTTON_STYLE.height
+            local ok_preview = pcall(imgui.Button, label .. '##btn_preview_' .. id, { 90, h })
+            if not ok_preview then
+                imgui.Button(label .. '##btn_preview_' .. id)
+            end
+
+            if pushed_style > 0 then
+                imgui.PopStyleVar(pushed_style)
+            end
+            if pushed > 0 then
+                imgui.PopStyleColor(pushed)
+            end
+        end
+
+        draw_preview_button('dyna_sel', 'Dynamis', true, C.ITEM or DEFAULT_COLORS.ITEM)
+        imgui.SameLine()
+        draw_preview_button('lim_sel', 'Limbus', true, C.HUNDO or DEFAULT_COLORS.HUNDO)
+        imgui.SameLine()
+        draw_preview_button('idle', 'Idle', false, C.ITEM or DEFAULT_COLORS.ITEM)
+    end
+
+    if imgui.SmallButton('Reset button style') then
+        for k, v in pairs(DEFAULT_BUTTON_STYLE) do
+            if type(v) == 'table' then
+                B[k] = copy_rgba(v)
+            else
+                B[k] = v
+            end
+        end
+        changed = true
+    end
+    cfg.button_style = B
+
     if changed then
         persist(cfg)
     end
@@ -671,11 +1209,50 @@ function ui.render(sess, cfg)
     -- Defaults (colores, tema, opacidad)
     ----------------------------------------------------------------
     cfg.colors = cfg.colors or {}
+    local migrated_palette = false
     for k, v in pairs(DEFAULT_COLORS) do
         if not cfg.colors[k] then
             cfg.colors[k] = { table.unpack(v) }
+            migrated_palette = true
         end
     end
+    if rgba_equals(cfg.colors.CUR, LEGACY_CUR_DEFAULT) then
+        cfg.colors.CUR = copy_rgba(DEFAULT_COLORS.HUNDO)
+        migrated_palette = true
+    end
+    if rgba_equals(cfg.colors.ITEM, LEGACY_ITEM_DEFAULT) then
+        cfg.colors.ITEM = copy_rgba(DEFAULT_COLORS.ITEM)
+        migrated_palette = true
+    end
+    cfg.visual_colors = cfg.visual_colors or {}
+    for k, v in pairs(DEFAULT_VISUAL_COLORS) do
+        cfg.visual_colors[k] = sanitize_rgba(cfg.visual_colors[k], v)
+    end
+    cfg.chip_colors = cfg.chip_colors or {}
+    if (cfg.chip_colors.smoky == nil) and (cfg.chip_colors.smokey ~= nil) then
+        cfg.chip_colors.smoky = cfg.chip_colors.smokey
+        migrated_palette = true
+    end
+    for _, key in ipairs(CHIP_COLOR_KEYS) do
+        if cfg.chip_colors[key] == nil then
+            migrated_palette = true
+        end
+        cfg.chip_colors[key] = sanitize_rgba(cfg.chip_colors[key], DEFAULT_CHIP_COLORS[key])
+    end
+    if migrated_palette then
+        persist(cfg)
+    end
+    cfg.button_style = cfg.button_style or {}
+    cfg.button_style.rounding = clamp_num(cfg.button_style.rounding, 0.0, 16.0, DEFAULT_BUTTON_STYLE.rounding)
+    cfg.button_style.height = clamp_num(cfg.button_style.height, 18.0, 36.0, DEFAULT_BUTTON_STYLE.height)
+    cfg.button_style.border_selected = clamp_num(cfg.button_style.border_selected, 0.8, 3.0, DEFAULT_BUTTON_STYLE.border_selected)
+    cfg.button_style.border_idle = clamp_num(cfg.button_style.border_idle, 0.0, 2.4, DEFAULT_BUTTON_STYLE.border_idle)
+    cfg.button_style.selected_bg = sanitize_rgba(cfg.button_style.selected_bg, DEFAULT_BUTTON_STYLE.selected_bg)
+    cfg.button_style.selected_border = sanitize_rgba(cfg.button_style.selected_border, DEFAULT_BUTTON_STYLE.selected_border)
+    cfg.button_style.selected_text = sanitize_rgba(cfg.button_style.selected_text, DEFAULT_BUTTON_STYLE.selected_text)
+    cfg.button_style.idle_bg = sanitize_rgba(cfg.button_style.idle_bg, DEFAULT_BUTTON_STYLE.idle_bg)
+    cfg.button_style.idle_border = sanitize_rgba(cfg.button_style.idle_border, DEFAULT_BUTTON_STYLE.idle_border)
+    cfg.button_style.idle_text = sanitize_rgba(cfg.button_style.idle_text, DEFAULT_BUTTON_STYLE.idle_text)
     cfg.alpha = cfg.alpha or 0.9
     cfg.theme = cfg.theme or ((THEMES_OK and ADDON_THEMES.Default) and 'Default' or '')
     -- Ajuste de escala de fuente para toda la ventana. Valor por defecto 1.0 (sin escalado).
@@ -720,8 +1297,19 @@ function ui.render(sess, cfg)
     end
 
     imgui.SetNextWindowBgAlpha(cfg.alpha)
+    local pushed_window_bg = 0
+    if COL_WINDOW_BG ~= nil then
+        local win_bg = copy_rgba(cfg.visual_colors.WINDOW_BG or DEFAULT_VISUAL_COLORS.WINDOW_BG)
+        win_bg[4] = clamp_num((tonumber(win_bg[4]) or 1.0) * (tonumber(cfg.alpha) or 1.0), 0.0, 1.0, 0.94)
+        imgui.PushStyleColor(COL_WINDOW_BG, win_bg)
+        pushed_window_bg = 1
+    end
+
     if not imgui.Begin('Treasure', false, window_flags) then
         imgui.End()
+        if pushed_window_bg > 0 then
+            imgui.PopStyleColor(pushed_window_bg)
+        end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
         end
@@ -746,10 +1334,34 @@ function ui.render(sess, cfg)
     ----------------------------------------------------------------
     -- Guarda automáticamente
     ----------------------------------------------------------------
+    local root_window = nil
     do
         local px, py = imgui.GetWindowPos()
         local wx, wy = imgui.GetWindowSize()
+        if type(px) ~= 'number' then
+            px, py = _get_xy(px)
+        end
+        if type(wx) ~= 'number' then
+            wx, wy = _get_xy(wx)
+        end
+        px = tonumber(px) or 0
+        py = tonumber(py) or 0
+        wx = tonumber(wx) or 0
+        wy = tonumber(wy) or 0
         local win = cfg.layout[mode].window or {}
+        if mode == 'full' then
+            -- Keep last sane full size if current frame reports a tiny transient size.
+            if wx < 520 then
+                wx = math.max(520, tonumber(win.w) or 0)
+            end
+            if wy < 320 then
+                wy = math.max(320, tonumber(win.h) or 0)
+            end
+        else
+            wx = math.max(220, wx)
+            wy = math.max(120, wy)
+        end
+        root_window = { x = px, y = py, w = wx, h = wy }
         local h_changed = (not ui.compact) and (win.h ~= wy)
         if win.x ~= px or win.y ~= py or win.w ~= wx or h_changed then
             cfg.layout[mode].window = { x = px, y = py, w = wx, h = wy }
@@ -758,11 +1370,14 @@ function ui.render(sess, cfg)
     end
 
     ----------------------------------------------------------------
-    -- Si estamos fuera de Dynamis, aviso y salida
+    -- Si estamos fuera de un evento, aviso y salida
     ----------------------------------------------------------------
     if not sess then
-        imgui.TextDisabled('Outside Dynamis.')
+        imgui.TextDisabled('Outside event area.')
         imgui.End()
+        if pushed_window_bg > 0 then
+            imgui.PopStyleColor(pushed_window_bg)
+        end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
         end
@@ -773,70 +1388,309 @@ function ui.render(sess, cfg)
     end
 
     ----------------------------------------------------------------
-    -- Botones Dynamis / Back  y  Close ✕
+    -- Botones de vista / cerrar
     ----------------------------------------------------------------
     local mode_toggled = false
+    local close_requested = false
     do
         local style = imgui.GetStyle()
         local pad = style.FramePadding.x
         local spacing = style.ItemInnerSpacing.x
-        local win_w = imgui.GetWindowWidth()
 
-        local lbl_toggle = ui.compact and 'Dynamis > ##toggle' or '< Back ##toggle'
-        local txt1_w, _ = imgui.CalcTextSize(lbl_toggle)
-        local btn1_w = txt1_w + pad * 2
+        local zone_event = tostring((sess and sess.event_id) or ''):lower()
+        if zone_event ~= 'dynamis' and zone_event ~= 'limbus' then
+            zone_event = ''
+        end
+        if (not ui.selected_event_user) or (not ui.selected_event) or ui.selected_event == '' then
+            ui.selected_event = (zone_event ~= '' and zone_event) or tostring(event_router.get_active(ui))
+        end
 
-        local lbl_close = 'X##close'
-        local txt2_w, _ = imgui.CalcTextSize('X')
-        local btn2_w = txt2_w + pad * 2
+        if not ui.compact then
+            local event_id = tostring(ui.selected_event or zone_event)
+            local event_name = (event_id == 'limbus' and 'Limbus')
+                    or (event_id == 'dynamis' and 'Dynamis')
+                    or title(event_id)
+            local title = 'Treasure - ' .. tostring(event_name)
+            local header_h = 28
+            local bs = cfg.button_style or DEFAULT_BUTTON_STYLE
+            local accent = (event_id == 'limbus') and (C.HUNDO or DEFAULT_COLORS.HUNDO) or (C.ITEM or DEFAULT_COLORS.ITEM)
 
-        if ui.compact and sess and sess.is_event then
-            local t = dynamis_time_left_text(sess)
-            if t then
-                imgui.SetCursorPosX(pad)
-                imgui.TextUnformatted(t)
-                imgui.SameLine()
+            local hdr_col = 0
+            if COL_CHILD_BG ~= nil then
+                imgui.PushStyleColor(COL_CHILD_BG, cfg.visual_colors.HEADER_BG or DEFAULT_VISUAL_COLORS.HEADER_BG)
+                hdr_col = hdr_col + 1
+            end
+            if COL_BORDER ~= nil then
+                imgui.PushStyleColor(COL_BORDER, cfg.visual_colors.HEADER_BORDER or DEFAULT_VISUAL_COLORS.HEADER_BORDER)
+                hdr_col = hdr_col + 1
+            end
+
+            local hdr_var = 0
+            if SV_CHILD_ROUNDING ~= nil then
+                imgui.PushStyleVar(SV_CHILD_ROUNDING, 5.0)
+                hdr_var = hdr_var + 1
+            end
+            if SV_FRAME_BORDER_SIZE ~= nil then
+                imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, 1.0)
+                hdr_var = hdr_var + 1
+            end
+
+            local ok_child, began_child = pcall(imgui.BeginChild, 'treasure_full_header', { 0, header_h }, false, WF('NoScrollbar'))
+            if not ok_child then
+                began_child = imgui.BeginChild('treasure_full_header', { 0, header_h }, false)
+            end
+            if began_child then
+                imgui.SetCursorPosX(8)
+                imgui.SetCursorPosY(6)
+                if COL_TEXT ~= nil then
+                    imgui.PushStyleColor(COL_TEXT, cfg.visual_colors.HEADER_TEXT or DEFAULT_VISUAL_COLORS.HEADER_TEXT)
+                    imgui.TextUnformatted(title)
+                    imgui.PopStyleColor(1)
+                else
+                    imgui.TextUnformatted(title)
+                end
+
+                local tw_back, _ = imgui.CalcTextSize('Back')
+                local tw_close, _ = imgui.CalcTextSize('X')
+                local bw_back = math.max(56, tw_back + (pad * 2))
+                local bw_close = math.max(26, tw_close + (pad * 2))
+                local header_gap = math.max(spacing + 6, 16)
+                local child_w = imgui.GetWindowWidth()
+                local x_close = math.max(8, child_w - bw_close - 12)
+                local x_back = math.max(8, x_close - header_gap - bw_back)
+
+                local function draw_header_button(id, label, is_close_btn, width_px)
+                    local is_selected = not is_close_btn
+                    local base = is_selected and bs.selected_bg or bs.idle_bg
+                    local hovered = tint_rgba(base, 1.10, 0.03)
+                    local active = tint_rgba(base, 0.86, 0.00)
+                    local border = is_selected and mix_rgba(bs.selected_border, accent, 0.65) or bs.idle_border
+                    local text_col = is_selected and mix_rgba(bs.selected_text, accent, 0.75) or bs.idle_text
+                    local border_sz = is_selected and (bs.border_selected or DEFAULT_BUTTON_STYLE.border_selected) or (bs.border_idle or DEFAULT_BUTTON_STYLE.border_idle)
+
+                    local pcol = 0
+                    if (COL_BUTTON ~= nil) and (COL_BUTTON_HOVERED ~= nil) and (COL_BUTTON_ACTIVE ~= nil) then
+                        imgui.PushStyleColor(COL_BUTTON, base)
+                        imgui.PushStyleColor(COL_BUTTON_HOVERED, hovered)
+                        imgui.PushStyleColor(COL_BUTTON_ACTIVE, active)
+                        pcol = pcol + 3
+                    end
+                    if COL_BORDER ~= nil then
+                        imgui.PushStyleColor(COL_BORDER, border)
+                        pcol = pcol + 1
+                    end
+                    if COL_TEXT ~= nil then
+                        imgui.PushStyleColor(COL_TEXT, text_col)
+                        pcol = pcol + 1
+                    end
+
+                    local pvar = 0
+                    if SV_FRAME_ROUNDING ~= nil then
+                        imgui.PushStyleVar(SV_FRAME_ROUNDING, bs.rounding or DEFAULT_BUTTON_STYLE.rounding)
+                        pvar = pvar + 1
+                    end
+                    if SV_FRAME_BORDER_SIZE ~= nil then
+                        imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, border_sz)
+                        pvar = pvar + 1
+                    end
+
+                    local clicked = false
+                    local ok_btn, res_btn = pcall(imgui.Button, label .. '##full_hdr_' .. id, { width_px, bs.height or DEFAULT_BUTTON_STYLE.height })
+                    if ok_btn then
+                        clicked = (res_btn == true)
+                    else
+                        clicked = imgui.Button(label .. '##full_hdr_' .. id)
+                    end
+
+                    if pvar > 0 then
+                        imgui.PopStyleVar(pvar)
+                    end
+                    if pcol > 0 then
+                        imgui.PopStyleColor(pcol)
+                    end
+                    return clicked
+                end
+
+                imgui.SetCursorPosX(x_back)
+                imgui.SetCursorPosY(3)
+                if draw_header_button('back', 'Back', false, bw_back) then
+                    save_layout(cfg, mode, root_window)
+                    ui.compact = true
+                    ui._layout_mode = ''
+                    ui._last_compact_count = nil
+                    ui._last_compact_height = nil
+                    ui._top_area = nil
+                    mode_toggled = true
+                    ui.history_idx = 0
+                    ui.history_session = nil
+                end
+
+                imgui.SetCursorPosX(x_close)
+                imgui.SetCursorPosY(3)
+                if draw_header_button('close', 'X', true, bw_close) then
+                    close_requested = true
+                end
+
+                imgui.EndChild()
+            end
+
+            if hdr_var > 0 then
+                imgui.PopStyleVar(hdr_var)
+            end
+            if hdr_col > 0 then
+                imgui.PopStyleColor(hdr_col)
             end
         end
 
-        imgui.SetCursorPosX(win_w - btn1_w - btn2_w - spacing - pad)
+        if ui.compact then
+            local chip_selected_event = zone_event -- fixed highlight: current zone event only
+            local function draw_event_chip(id, label, chip_w)
+                local selected = (chip_selected_event ~= '' and chip_selected_event == id)
+                local bs = cfg.button_style or DEFAULT_BUTTON_STYLE
+                local accent = (id == 'limbus') and (C.HUNDO or DEFAULT_COLORS.HUNDO) or (C.ITEM or DEFAULT_COLORS.ITEM)
+                local base, hovered, active, border, text_col
+                if selected then
+                    base = bs.selected_bg
+                    hovered = tint_rgba(base, 1.10, 0.03)
+                    active = tint_rgba(base, 0.86, 0.00)
+                    border = mix_rgba(bs.selected_border, accent, 0.65)
+                    text_col = mix_rgba(bs.selected_text, accent, 0.75)
+                else
+                    base = bs.idle_bg
+                    hovered = tint_rgba(base, 1.12, 0.03)
+                    active = tint_rgba(base, 0.88, 0.00)
+                    border = bs.idle_border
+                    text_col = bs.idle_text
+                end
 
+                local pushed = 0
+                if (COL_BUTTON ~= nil) and (COL_BUTTON_HOVERED ~= nil) and (COL_BUTTON_ACTIVE ~= nil) then
+                    imgui.PushStyleColor(COL_BUTTON, base)
+                    imgui.PushStyleColor(COL_BUTTON_HOVERED, hovered)
+                    imgui.PushStyleColor(COL_BUTTON_ACTIVE, active)
+                    pushed = 3
+                end
+                if COL_BORDER ~= nil then
+                    imgui.PushStyleColor(COL_BORDER, border)
+                    pushed = pushed + 1
+                end
+                if COL_TEXT ~= nil then
+                    imgui.PushStyleColor(COL_TEXT, text_col)
+                    pushed = pushed + 1
+                end
 
-        -- Toggle compact / full
-        if imgui.SmallButton(lbl_toggle) then
-            -- guarda el layout actual antes de cambiar
-            save_layout(cfg, mode)
-            -- intercambia el modo
-            ui.compact = not ui.compact
-            ui._layout_mode = ''
-            ui._last_compact_count = nil
-            ui._last_compact_height = nil
-            ui._top_area = nil
-            mode_toggled = true
-            -- si cambia al modo compacto, restaura la sesión actual
-            if ui.compact then
-                ui.history_idx = 0
-                ui.history_session = nil
+                local pushed_style = 0
+                if SV_FRAME_ROUNDING ~= nil then
+                    imgui.PushStyleVar(SV_FRAME_ROUNDING, bs.rounding or DEFAULT_BUTTON_STYLE.rounding)
+                    pushed_style = pushed_style + 1
+                end
+                if SV_FRAME_BORDER_SIZE ~= nil then
+                    local border_sz = selected and (bs.border_selected or DEFAULT_BUTTON_STYLE.border_selected) or (bs.border_idle or DEFAULT_BUTTON_STYLE.border_idle)
+                    imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, border_sz)
+                    pushed_style = pushed_style + 1
+                end
+
+                local clicked = false
+                local btn_h = bs.height or DEFAULT_BUTTON_STYLE.height
+                local ok_btn, res_btn = pcall(imgui.Button, label .. '##chip_' .. id, { chip_w, btn_h })
+                if ok_btn then
+                    clicked = (res_btn == true)
+                else
+                    clicked = imgui.Button(label .. '##chip_' .. id)
+                end
+                if pushed_style > 0 then
+                    imgui.PopStyleVar(pushed_style)
+                end
+                if pushed > 0 then
+                    imgui.PopStyleColor(pushed)
+                end
+
+                if clicked then
+                    ui.selected_event = id
+                    ui.selected_event_user = true
+                    event_router.set_active(ui, id)
+
+                    -- Compact => Full using selected event.
+                    save_layout(cfg, mode, root_window)
+                    ui.compact = false
+                    ui._layout_mode = ''
+                    ui._last_compact_count = nil
+                    ui._last_compact_height = nil
+                    ui._top_area = nil
+                    ui.history_idx = 0
+                    ui.history_session = nil
+                    mode_toggled = true
+                end
             end
+
+            imgui.SetCursorPosX(pad)
+            imgui.Dummy({ 0, 2 })
+            local t = nil
+            if sess and sess.is_event then
+                t = event_router.top_left_status(ui, {
+                    sess = sess,
+                    event_id = sess and sess.event_id or ui.selected_event or ui.active_event,
+                })
+            end
+            if t and t ~= '' then
+                local zid = tonumber(sess and sess.zone_id) or 0
+                local is_limbus = (tostring((sess and sess.event_id) or ''):lower() == 'limbus')
+                        or (zid == 37 or zid == 38)
+                        or (sess and sess.limbus_timer ~= nil)
+                if is_limbus then
+                    local clean_t = tostring(t):gsub(':OPEN', ''):gsub(':CLOSED', '')
+                    imgui.TextColored(cfg.visual_colors.HUD_TEXT, clean_t)
+                    imgui.SameLine()
+                    local gate_open = (sess and sess.limbus_gate_ready == true)
+                    local ok_icon, drew_icon = pcall(draw_gate_icon, gate_open, 14)
+                    if not (ok_icon and drew_icon) then
+                        local ok_col = cfg.visual_colors.STATE_OK or DEFAULT_VISUAL_COLORS.STATE_OK
+                        local txt_col = cfg.visual_colors.HUD_TEXT or DEFAULT_VISUAL_COLORS.HUD_TEXT
+                        imgui.TextColored(gate_open and ok_col or txt_col, gate_open and 'Open' or 'Closed')
+                    end
+                else
+                    imgui.TextColored(cfg.visual_colors.HUD_TEXT, t)
+                end
+            end
+
+            imgui.SetCursorPosX(pad)
+            local avail_x, _ = imgui.GetContentRegionAvail()
+            if type(avail_x) ~= 'number' then
+                avail_x = _get_xy(avail_x)
+            end
+            local avail_w = tonumber(avail_x) or 0
+            local gap = spacing
+            local chip_w = math.floor((avail_w - gap) / 2)
+            if chip_w < 110 then
+                chip_w = 110
+            end
+            draw_event_chip('dynamis', 'Dynamis', chip_w)
+            imgui.SameLine(0, gap)
+            draw_event_chip('limbus', 'Limbus', chip_w)
         end
+    end
 
-        imgui.SameLine(0, spacing)
-        if imgui.SmallButton(lbl_close) then
-            cfg.visible = false
-            persist(cfg)
-            imgui.End()
-            if pushed_style > 0 then
-                imgui.PopStyleVar(pushed_style)
-            end
-            if pushed_theme > 0 then
-                imgui.PopStyleColor(pushed_theme)
-            end
-            return
+    if close_requested then
+        cfg.visible = false
+        persist(cfg)
+        imgui.End()
+        if pushed_window_bg > 0 then
+            imgui.PopStyleColor(pushed_window_bg)
         end
+        if pushed_style > 0 then
+            imgui.PopStyleVar(pushed_style)
+        end
+        if pushed_theme > 0 then
+            imgui.PopStyleColor(pushed_theme)
+        end
+        return
     end
 
     if mode_toggled then
         imgui.End()
+        if pushed_window_bg > 0 then
+            imgui.PopStyleColor(pushed_window_bg)
+        end
         if pushed_style > 0 then
             imgui.PopStyleVar(pushed_style)
         end
@@ -895,6 +1749,17 @@ function ui.render(sess, cfg)
         end
     end
 
+    if not ui.compact then
+        local event_id = tostring(ui.selected_event or (sess and sess.event_id) or ui.active_event or 'dynamis')
+        local status_top = event_router.top_left_status(ui, {
+            sess = sess,
+            event_id = event_id,
+        })
+        if status_top and status_top ~= '' then
+            imgui.TextColored(cfg.visual_colors.HUD_TEXT, status_top)
+        end
+    end
+
     imgui.Separator()
 
     ----------------------------------------------------------------
@@ -902,7 +1767,13 @@ function ui.render(sess, cfg)
     ----------------------------------------------------------------
     do
         if not ui.compact then
-            local files = store.list_sessions() or {}
+            local history_event = ui.selected_event or (sess and sess.event_id) or ui.active_event
+            if ui._history_event ~= history_event then
+                ui._history_event = history_event
+                ui.history_idx = 0
+                ui.history_session = nil
+            end
+            local files = store.list_sessions({ event_id = history_event }) or {}
             if #files > 0 then
                 -- Etiqueta que muestra la selección actual. la opción 0 representa
                 -- el estado actual.
@@ -912,7 +1783,44 @@ function ui.render(sess, cfg)
                 else
                     preview = 'Current'
                 end
-                if imgui.BeginCombo('History', preview) then
+
+                local sel_bg = { 0.10, 0.10, 0.11, 0.96 }
+                local sel_hover = { 0.14, 0.14, 0.15, 0.98 }
+                local sel_active = { 0.12, 0.12, 0.13, 1.00 }
+                local sel_border = { 0.36, 0.36, 0.38, 0.92 }
+
+                imgui.TextDisabled('Session')
+                imgui.SameLine()
+
+                local sel_col = 0
+                local sel_var = 0
+                if COL_FRAME_BG ~= nil then
+                    imgui.PushStyleColor(COL_FRAME_BG, sel_bg)
+                    sel_col = sel_col + 1
+                end
+                if COL_FRAME_BG_HOVERED ~= nil then
+                    imgui.PushStyleColor(COL_FRAME_BG_HOVERED, sel_hover)
+                    sel_col = sel_col + 1
+                end
+                if COL_FRAME_BG_ACTIVE ~= nil then
+                    imgui.PushStyleColor(COL_FRAME_BG_ACTIVE, sel_active)
+                    sel_col = sel_col + 1
+                end
+                if COL_BORDER ~= nil then
+                    imgui.PushStyleColor(COL_BORDER, sel_border)
+                    sel_col = sel_col + 1
+                end
+                if SV_FRAME_ROUNDING ~= nil then
+                    imgui.PushStyleVar(SV_FRAME_ROUNDING, 6.0)
+                    sel_var = sel_var + 1
+                end
+                if SV_FRAME_BORDER_SIZE ~= nil then
+                    imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, 1.1)
+                    sel_var = sel_var + 1
+                end
+
+                imgui.PushItemWidth(460)
+                if imgui.BeginCombo('##history_combo', preview) then
                     local sel0 = (ui.history_idx == 0)
                     if imgui.Selectable('Current', sel0) then
                         ui.history_idx = 0
@@ -935,6 +1843,13 @@ function ui.render(sess, cfg)
                     end
                     imgui.EndCombo()
                 end
+                imgui.PopItemWidth()
+                if sel_var > 0 then
+                    imgui.PopStyleVar(sel_var)
+                end
+                if sel_col > 0 then
+                    imgui.PopStyleColor(sel_col)
+                end
             end
         end
     end
@@ -943,1040 +1858,48 @@ function ui.render(sess, cfg)
     ----------------------------------------------------------------
     -- TAB BAR principal
     ----------------------------------------------------------------
-    if imgui.BeginTabBar('##edtabs') then
-        ----------------------------------------------------------------
-        -- COMPACT ----------------------------------------------------
-        ----------------------------------------------------------------
-        if ui.compact then
-            if imgui.BeginTabItem('Treasure') then
-                draw_treasure_table(sess, C, cfg)
-                imgui.EndTabItem()
-            end
-            ------------------------------------------------------------ FULL VIEW
-        else
-            ------------------------------------------------ ALL
-            if imgui.BeginTabItem('All') then
-                imgui.BeginTable('tbl_all', 4, TF_BORDER)
-                imgui.TableSetupColumn('Item');
-                imgui.TableSetupColumn('Qty')
-                imgui.TableSetupColumn('Total');
-                imgui.TableSetupColumn('Lost')
-                imgui.TableHeadersRow()
-
-                local acc = {}
-                for n, q in pairs(sess.drops.currency_total) do
-                    acc[n] = { q = q, e = 0, l = 0 }
-                end
-                for _, pl in pairs(sess.drops.equips_by_player) do
-                    for _, it in ipairs(pl) do
-                        local a = acc[it] or { q = 0, e = 0, l = 0 };
-                        a.e = a.e + 1;
-                        acc[it] = a
-                    end
-                end
-                local lost_list = sess.drops.lost or {}
-                for _, ln in ipairs(lost_list) do
-                    local it = lost_name(ln)
-                    if it ~= '' then
-                        local a = acc[it] or { q = 0, e = 0, l = 0 }
-                        a.l = a.l + 1
-                        acc[it] = a
-                    end
-                end
-                for _, k in ipairs(keys(acc)) do
-                    local a = acc[k]
-                    local col = is_cur(k) and (is_hundo(k) and C.HUNDO or C.CUR) or C.ITEM
-                    imgui.TableNextRow()
-                    imgui.TableSetColumnIndex(0);
-                    imgui.TextColored(col, title(k))
-                    imgui.TableSetColumnIndex(1);
-                    imgui.TextColored(C.QTY, a.q + a.e .. '')
-                    imgui.TableSetColumnIndex(2);
-                    imgui.TextColored(C.QTY, a.q + a.e + a.l .. '')
-                    imgui.TableSetColumnIndex(3);
-                    if a.l > 0 then
-                        imgui.TextColored(C.LOST, a.l .. '')
-                    end
-                end
-                imgui.EndTable();
-                imgui.EndTabItem()
-            end
-
-            ------------------------------------------------ CURRENCY
-            if imgui.BeginTabItem('Currency') then
-                -- Summary (total units per base currency)
-                do
-                    local agg = {}
-                    local total_units = 0
-
-                    for name, qty in pairs(sess.drops.currency_total or {}) do
-                        if is_cur(name) then
-                            local units = to_units(name, qty)
-                            local base = base_cur(name)
-                            agg[base] = (agg[base] or 0) + units
-                        end
-                    end
-
-                    for _, base in ipairs(keys(agg)) do
-                        total_units = total_units + (agg[base] or 0)
-                    end
-
-                    if imgui.BeginTable('tbl_cur_summary', 2, TF_BORDER) then
-                        imgui.TableSetupColumn('Currency')
-                        imgui.TableSetupColumn('Total units')
-                        imgui.TableHeadersRow()
-
-                        for _, base in ipairs(keys(agg)) do
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextColored(C.CUR, display_cur(base))
-                            imgui.TableSetColumnIndex(1)
-                            imgui.TextColored(C.QTY, tostring(agg[base] or 0))
-                        end
-
-                        imgui.TableNextRow()
-                        imgui.TableSetColumnIndex(0)
-                        imgui.TextColored(C.ITEM, 'Total')
-                        imgui.TableSetColumnIndex(1)
-                        imgui.TextColored(C.QTY, tostring(total_units))
-
-                        imgui.EndTable()
-                    end
-
-                    imgui.Separator()
-                end
-
-                -- Original currency table (tbl_cur)
-                imgui.BeginTable('tbl_cur', 4, TF_BORDER)
-                imgui.TableSetupColumn('Currency')
-                imgui.TableSetupColumn('Qty')
-                imgui.TableSetupColumn('Total')
-                imgui.TableSetupColumn('Lost')
-                imgui.TableHeadersRow()
-
-                local lost = sess.drops.lost_total or {}
-                if not sess.drops.lost_total then
-                    lost = {}
-                    for _, ln in ipairs(sess.drops.lost or {}) do
-                        local it = lost_name(ln)
-                        if it ~= '' then
-                            lost[it] = (lost[it] or 0) + 1
-                        end
-                    end
-                end
-                for _, cur in ipairs(keys(sess.drops.currency_total or {})) do
-                    if is_cur(cur) then
-                        local qty = sess.drops.currency_total[cur] or 0
-                        local lst = lost[cur] or 0
-                        local col = is_hundo(cur) and C.HUNDO or C.CUR
-
-                        imgui.TableNextRow()
-                        imgui.TableSetColumnIndex(0)
-                        imgui.TextColored(col, title(cur))
-                        imgui.TableSetColumnIndex(1)
-                        imgui.TextColored(C.QTY, tostring(qty))
-                        imgui.TableSetColumnIndex(2)
-                        imgui.TextColored(C.QTY, tostring(qty + lst))
-                        imgui.TableSetColumnIndex(3)
-                        if lst > 0 then
-                            imgui.TextColored(C.LOST, tostring(lst))
-                        end
-                    end
-                end
-
-                imgui.EndTable()
-
-                -- Personal THF steal tracker (single block, below Currency table).
-                do
-                    local sp = (sess.drops and sess.drops.steal_personal) or {}
-                    local attempts = tonumber(sp.attempts) or 0
-
-                    if attempts > 0 then
-                        local success = tonumber(sp.success) or 0
-                        local failed = tonumber(sp.failed) or 0
-                        local success_rate = (attempts > 0) and ((success * 100.0) / attempts) or 0.0
-                        local by_currency = sp.by_currency or {}
-                        local order = {
-                            'Tukuku Whiteshell',
-                            'Ordelle Bronzepiece',
-                            'One Byne Bill',
-                        }
-
-                        imgui.Separator()
-                        imgui.TextColored(C.ITEM, 'Personal Steal (THF)')
-
-                        if imgui.BeginTable('tbl_cur_steal_info', 2, TF_BORDER) then
-                            imgui.TableSetupColumn('Info')
-                            imgui.TableSetupColumn('Value')
-                            imgui.TableHeadersRow()
-
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextUnformatted('Attempts')
-                            imgui.TableSetColumnIndex(1)
-                            imgui.TextColored(C.QTY, tostring(attempts))
-
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextUnformatted('Success')
-                            imgui.TableSetColumnIndex(1)
-                            imgui.TextColored(C.QTY, tostring(success))
-
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextUnformatted('Failed')
-                            imgui.TableSetColumnIndex(1)
-                            imgui.TextColored(C.LOST, tostring(failed))
-
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextUnformatted('Success %')
-                            imgui.TableSetColumnIndex(1)
-                            imgui.TextColored(C.QTY, string.format('%.1f%%', success_rate))
-
-                            local total_stolen = 0
-                            for _, name in ipairs(order) do
-                                local qty = tonumber(by_currency[name]) or 0
-                                if qty > 0 then
-                                    total_stolen = total_stolen + qty
-
-                                    imgui.TableNextRow()
-                                    imgui.TableSetColumnIndex(0)
-                                    imgui.TextColored(C.CUR, name)
-                                    imgui.TableSetColumnIndex(1)
-                                    imgui.TextColored(C.QTY, tostring(qty))
-                                end
-                            end
-
-                            if total_stolen > 0 then
-                                imgui.TableNextRow()
-                                imgui.TableSetColumnIndex(0)
-                                imgui.TextColored(C.ITEM, 'Total Stolen')
-                                imgui.TableSetColumnIndex(1)
-                                imgui.TextColored(C.QTY, tostring(total_stolen))
-                            end
-
-                            imgui.EndTable()
-                        end
-                    end
-                end
-
-                imgui.EndTabItem()
-            end
-
-
-            ---------------------------------------------------------------- PLAYERS
-            -- ---------------------------------------------------------------- PLAYERS
-            if imgui.BeginTabItem('Players') then
-                local plist = {}
-                for _, p in ipairs(keys(sess.drops.by_player or {})) do
-                    if is_valid_player_name(p) then
-                        plist[#plist + 1] = p
-                    end
-                end
-
-
-                -- Toggle currency-only + combo
-                do
-                    local style = imgui.GetStyle()
-                    local spacing = style.ItemInnerSpacing.x
-                    local pad = style.FramePadding.x
-                    local win_w = imgui.GetWindowWidth()
-
-                    local v = { ui.players_currency_only == true }
-                    if imgui.Checkbox('Currency only', v) then
-                        ui.players_currency_only = v[1]
-                    end
-
-                    local preview = (ui.filter == 'All') and 'All players' or ui.filter
-
-                    local lbl = 'Show player'
-                    local lbl_w, _ = imgui.CalcTextSize(lbl)
-                    local prev_w, _ = imgui.CalcTextSize(preview)
-
-                    local combo_w = math.max(160, prev_w + pad * 6)
-                    local total_w = lbl_w + spacing + combo_w
-
-                    imgui.SameLine(0, spacing * 2)
-                    imgui.SetCursorPosX(win_w - total_w - pad)
-
-                    imgui.TextUnformatted(lbl)
-                    imgui.SameLine()
-                    imgui.PushItemWidth(combo_w)
-                    if imgui.BeginCombo('##show_player', preview) then
-                        if imgui.Selectable('All players', ui.filter == 'All') then
-                            ui.filter = 'All'
-                        end
-                        if ui.filter == 'All' then
-                            imgui.SetItemDefaultFocus()
-                        end
-
-                        for _, p in ipairs(plist) do
-                            if imgui.Selectable(p, ui.filter == p) then
-                                ui.filter = p
-                            end
-                            if ui.filter == p then
-                                imgui.SetItemDefaultFocus()
-                            end
-                        end
-                        imgui.EndCombo()
-                    end
-                    imgui.PopItemWidth()
-                end
-
-                imgui.Separator()
-
-                local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
-
-                local function should_show_item(it)
-                    if not ui.players_currency_only then
-                        return true
-                    end
-                    return is_cur(it)
-                end
-
-                local function build_rows_for_player(pl)
-                    local bag = sess.drops.by_player[pl] or {}
-                    local rows = {}
-                    for _, it in ipairs(keys(bag)) do
-                        if should_show_item(it) then
-                            local qty = tonumber(bag[it]) or 0
-                            if qty > 0 then
-                                rows[#rows + 1] = { item = it, qty = qty }
-                            end
-                        end
-                    end
-                    return rows
-                end
-
-                if ui.filter == 'All' then
-                    local printed_any = false
-
-                    for _, pl in ipairs(plist) do
-                        local rows = build_rows_for_player(pl)
-                        if #rows > 0 then
-                            printed_any = true
-
-                            if imgui.BeginTable('tbl_' .. pl, 3, TFLAGS) then
-                                local stretch = imgui.TableColumnFlags_WidthStretch or 0
-                                imgui.TableSetupColumn('Player', stretch)
-                                imgui.TableSetupColumn('Item', stretch)
-                                imgui.TableSetupColumn('Qty', stretch)
-                                imgui.TableHeadersRow()
-
-                                for _, r in ipairs(rows) do
-                                    local col = is_cur(r.item) and (is_hundo(r.item) and C.HUNDO or C.CUR) or C.ITEM
-                                    imgui.TableNextRow()
-                                    imgui.TableSetColumnIndex(0)
-                                    imgui.TextColored(C.NAME, pl)
-                                    imgui.TableSetColumnIndex(1)
-                                    imgui.TextColored(col, title(r.item))
-                                    imgui.TableSetColumnIndex(2)
-                                    imgui.TextColored(C.QTY, tostring(r.qty))
-                                end
-
-                                imgui.EndTable()
-                            end
-
-                            imgui.Separator()
-                        end
-                    end
-
-                    if not printed_any then
-                        imgui.TextDisabled('No items to show for any player.')
-                    end
-                else
-                    local pl = ui.filter
-                    local rows = build_rows_for_player(pl)
-
-                    if #rows == 0 then
-                        imgui.TextDisabled('No items to show for this player.')
-                    else
-                        if imgui.BeginTable('tbl_ply_single', 3, TFLAGS) then
-                            imgui.TableSetupColumn('Player')
-                            imgui.TableSetupColumn('Item')
-                            imgui.TableSetupColumn('Qty')
-                            imgui.TableHeadersRow()
-
-                            for _, r in ipairs(rows) do
-                                local col = is_cur(r.item) and (is_hundo(r.item) and C.HUNDO or C.CUR) or C.ITEM
-                                imgui.TableNextRow()
-                                imgui.TableSetColumnIndex(0)
-                                imgui.TextColored(C.NAME, pl)
-                                imgui.TableSetColumnIndex(1)
-                                imgui.TextColored(col, title(r.item))
-                                imgui.TableSetColumnIndex(2)
-                                imgui.TextColored(C.QTY, tostring(r.qty))
-                            end
-
-                            imgui.EndTable()
-                        end
-                    end
-                end
-
-                imgui.EndTabItem()
-            end
-
-
-            ---------------------------------------------------------------- ITEMS
-            if imgui.BeginTabItem('Items') then
-                local plist = {}
-                for _, p in ipairs(keys(sess.drops.by_player or {})) do
-                    if is_valid_player_name(p) then
-                        plist[#plist + 1] = p
-                    end
-                end
-
-                local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
-                local printed_any = false
-
-                for _, pl in ipairs(plist) do
-                    local bag = sess.drops.by_player[pl] or {}
-
-                    local rows = {}
-                    for _, it in ipairs(keys(bag)) do
-                        if not is_cur(it) then
-                            local qty = tonumber(bag[it]) or 0
-                            if qty > 0 then
-                                rows[#rows + 1] = { item = it, qty = qty }
-                            end
-                        end
-                    end
-
-                    if #rows > 0 then
-                        printed_any = true
-
-                        if imgui.BeginTable('tbl_items_' .. pl, 3, TFLAGS) then
-                            imgui.TableSetupColumn('Player')
-                            imgui.TableSetupColumn('Item')
-                            imgui.TableSetupColumn('Qty')
-                            imgui.TableHeadersRow()
-
-                            for _, r in ipairs(rows) do
-                                imgui.TableNextRow()
-                                imgui.TableSetColumnIndex(0)
-                                imgui.TextColored(C.NAME, pl)
-                                imgui.TableSetColumnIndex(1)
-                                imgui.TextColored(C.ITEM, title(r.item))
-                                imgui.TableSetColumnIndex(2)
-                                imgui.TextColored(C.QTY, tostring(r.qty))
-                            end
-
-                            imgui.EndTable()
-                        end
-
-                        imgui.Separator()
-                    end
-                end
-
-                if not printed_any then
-                    imgui.TextDisabled('No equipment items recorded.')
-                end
-
-                imgui.EndTabItem()
-            end
-
-
-
-            ---------------------------------------------------------------- LOST
-            if imgui.BeginTabItem('Lost') then
-                imgui.BeginTable('tbl_lost', 2, TF_BORDER)
-                imgui.TableSetupColumn('Time');
-                imgui.TableSetupColumn('Item')
-                imgui.TableHeadersRow()
-                for _, ln in ipairs(sess.drops.lost or {}) do
-                    local name = lost_name(ln)
-                    local tm = '--'
-                    if type(ln) == 'table' and ln.time then
-                        tm = os.date('%H:%M:%S', ln.time)
-                    else
-                        tm = tostring(ln):match('^(%d%d:%d%d:%d%d)') or '--'
-                    end
-
-                    local col = is_cur(name) and (is_hundo(name) and C.HUNDO or C.CUR) or C.ITEM
-                    imgui.TableNextRow()
-                    imgui.TableSetColumnIndex(0)
-                    imgui.Text(tm)
-                    imgui.TableSetColumnIndex(1)
-                    imgui.TextColored(col, title(name))
-                end
-
-                imgui.EndTable();
-                imgui.EndTabItem()
-            end
-
-            ---------------------------------------------------------------- TREASURE
-            if imgui.BeginTabItem('Treasure') then
-                draw_treasure_table(sess, C, cfg)
-                imgui.EndTabItem()
-            end
-
-            ---------------------------------------------------------------- MANAGEMENT
-            -- Tab for managing participants and tracking payments/deliveries.
-            if imgui.BeginTabItem('Management') then
-                if not (sess and sess.is_event) then
-                    imgui.TextDisabled('No active event')
-                    imgui.EndTabItem()
-                else
-                    sess.split = sess.split or {}
-                    sess.management = sess.management or {}
-
-                    local function ts_to_hm(ts)
-                        local t = os.date('*t', ts or os.time())
-                        return t.hour or 0, t.min or 0
-                    end
-
-                    local function hm_to_minutes(h, m)
-                        h = tonumber(h) or 0
-                        m = tonumber(m) or 0
-                        if h < 0 then h = 0 end
-                        if m < 0 then m = 0 end
-                        return h * 60 + m
-                    end
-
-                    local function calc_duration(start_h, start_m, end_h, end_m)
-                        local a = hm_to_minutes(start_h, start_m)
-                        local b = hm_to_minutes(end_h, end_m)
-                        local d = b - a
-                        if d < 0 then
-                            d = d + 24 * 60
-                        end
-                        return math.max(1, d)
-                    end
-
-                    local function combo_int(id, current, minv, maxv, fmt)
-                        local label = fmt and string.format(fmt, current) or tostring(current)
-                        if imgui.BeginCombo(id, label) then
-                            for v = minv, maxv do
-                                local sel = (v == current)
-                                local vlabel = fmt and string.format(fmt, v) or tostring(v)
-                                if imgui.Selectable(vlabel, sel) then
-                                    current = v
-                                end
-                                if sel then
-                                    imgui.SetItemDefaultFocus()
-                                end
-                            end
-                            imgui.EndCombo()
-                        end
-                        return current
-                    end
-
-
-                    -- Defaults for Start/End
-                    if sess.split.start_h == nil or sess.split.start_m == nil then
-                        local sh, sm = ts_to_hm(sess.start_time or os.time())
-                        sess.split.start_h, sess.split.start_m = sh, sm
-                    end
-
-                    if sess.split.end_h == nil or sess.split.end_m == nil then
-                        -- Auto end (default). Will be disabled if user edits End.
-                        sess.split._auto_end = true
-                        sess.split._auto_end_zone = tonumber(sess.zone_id) or 0
-
-                        local sh = tonumber(sess.split.start_h) or 0
-                        local sm = tonumber(sess.split.start_m) or 0
-                        local end_minutes = hm_to_minutes(sh, sm) + default_event_minutes(sess)
-                        end_minutes = end_minutes % (24 * 60)
-                        sess.split.end_h = math.floor(end_minutes / 60)
-                        sess.split.end_m = end_minutes - sess.split.end_h * 60
-                    end
-
-                    -- Zone id may arrive late. If End is still auto, recompute once when zone becomes valid/changes.
-                    do
-                        local auto = (sess.split._auto_end == true)
-                        local zid = tonumber(sess.zone_id) or 0
-                        local lastz = tonumber(sess.split._auto_end_zone) or 0
-
-                        if auto and zid ~= 0 and zid ~= lastz then
-                            sess.split._auto_end_zone = zid
-
-                            local sh = tonumber(sess.split.start_h) or 0
-                            local sm = tonumber(sess.split.start_m) or 0
-                            local end_minutes = hm_to_minutes(sh, sm) + default_event_minutes(sess)
-                            end_minutes = end_minutes % (24 * 60)
-                            sess.split.end_h = math.floor(end_minutes / 60)
-                            sess.split.end_m = end_minutes - sess.split.end_h * 60
-
-                            if store and sess and sess.is_event then
-                                store.save(sess)
-                            end
-                        end
-                    end
-
-                    -- Start / End UI
-                    do
-                        local old_sh = tonumber(sess.split.start_h) or 0
-                        local old_sm = tonumber(sess.split.start_m) or 0
-                        local old_eh = tonumber(sess.split.end_h) or 0
-                        local old_em = tonumber(sess.split.end_m) or 0
-                        local old_dur = tonumber(sess.split.duration_minutes) or 0
-                        local old_gp  = tonumber(sess.split.glass_price) or 1000000
-
-                        imgui.TextUnformatted('Start')
-                        imgui.SameLine()
-                        imgui.PushItemWidth(55)
-                        sess.split.start_h = combo_int('##st_h', old_sh, 0, 23, nil)
-                        imgui.PopItemWidth()
-                        imgui.SameLine()
-                        imgui.TextUnformatted('h')
-                        imgui.SameLine()
-                        imgui.PushItemWidth(55)
-                        sess.split.start_m = combo_int('##st_m', old_sm, 0, 55, '%02d')
-                        imgui.PopItemWidth()
-                        imgui.SameLine()
-                        imgui.TextUnformatted('m')
-
-                        imgui.SameLine()
-                        imgui.TextUnformatted('   End')
-                        imgui.SameLine()
-                        imgui.PushItemWidth(55)
-                        sess.split.end_h = combo_int('##en_h', old_eh, 0, 23, nil)
-                        imgui.PopItemWidth()
-                        imgui.SameLine()
-                        imgui.TextUnformatted('h')
-                        imgui.SameLine()
-                        imgui.PushItemWidth(55)
-                        sess.split.end_m = combo_int('##en_m', old_em, 0, 55, '%02d')
-                        imgui.PopItemWidth()
-                        imgui.SameLine()
-                        imgui.TextUnformatted('m')
-
-                        if sess.split.glass_price == nil then
-                            sess.split.glass_price = 1000000
-                        end
-
-                        local glass_price = tonumber(sess.split.glass_price) or 1000000
-                        if glass_price < 0 then glass_price = 0 end
-
-                        local style2 = imgui.GetStyle()
-                        local win_w2 = imgui.GetWindowWidth()
-                        local pad2 = style2.FramePadding.x
-                        local spacing2 = style2.ItemInnerSpacing.x
-
-                        local lbl_gp = 'Glass'
-                        local lbl_w, _ = imgui.CalcTextSize(lbl_gp)
-
-                        local input_w = 110
-                        local total_w = lbl_w + spacing2 + input_w
-
-                        local sb = style2.ScrollbarSize or 0
-                        imgui.SameLine()
-                        imgui.SetCursorPosX(win_w2 - sb - total_w - pad2 - 4)
-
-                        imgui.TextUnformatted(lbl_gp)
-                        imgui.SameLine()
-                        imgui.PushItemWidth(input_w)
-                        local gp = { glass_price }
-                        if imgui.InputInt('##glass_price', gp) then
-                            local new_price = gp[1]
-                            if new_price < 0 then new_price = 0 end
-                            glass_price = new_price
-                            sess.split.glass_price = glass_price
-                        end
-                        imgui.PopItemWidth()
-
-                        local new_dur = calc_duration(
-                                sess.split.start_h, sess.split.start_m,
-                                sess.split.end_h, sess.split.end_m
-                        )
-                        local dur_num = tonumber(new_dur) or 1
-                        sess.split.duration_minutes = dur_num
-
-                        local sh = tonumber(sess.split.start_h) or 0
-                        local sm = tonumber(sess.split.start_m) or 0
-                        local eh = tonumber(sess.split.end_h) or 0
-                        local em = tonumber(sess.split.end_m) or 0
-
-                        sess.split.start_h, sess.split.start_m = sh, sm
-                        sess.split.end_h, sess.split.end_m = eh, em
-
-                        -- If user edits End, disable auto end for this session (prevents late zone_id from overriding).
-                        if (eh ~= old_eh) or (em ~= old_em) then
-                            sess.split._auto_end = false
-                        end
-
-                        local changed =
-                        (sh ~= old_sh) or (sm ~= old_sm) or
-                                (eh ~= old_eh) or (em ~= old_em) or
-                                (dur_num ~= old_dur) or
-                                (glass_price ~= old_gp)
-
-                        if changed then
-                            if store and sess and sess.is_event then
-                                store.save(sess)
-                            end
-                        end
-
-                        imgui.Separator()
-                        imgui.TextUnformatted('Duration: ' .. tostring(dur_num) .. ' mins')
-                        imgui.Separator()
-                    end
-
-
-
-
-                    -- Build player list
-                    local names_set = {}
-                    if sess.drops and sess.drops.by_player then
-                        for name, _ in pairs(sess.drops.by_player) do
-                            if is_valid_player_name(name) then
-                                names_set[name] = true
-                            end
-                        end
-                    end
-                    if sess.management then
-                        for name, _ in pairs(sess.management) do
-                            if is_valid_player_name(name) then
-                                names_set[name] = true
-                            end
-                        end
-                    end
-                    if sess.participants then
-                        for name, _ in pairs(sess.participants) do
-                            if is_valid_player_name(name) then
-                                names_set[name] = true
-                            end
-                        end
-                    end
-
-
-                    local plist = {}
-                    for name, _ in pairs(names_set) do
-                        plist[#plist + 1] = name
-                    end
-                    table.sort(plist)
-
-                    local duration = tonumber(sess.split.duration_minutes) or 1
-
-                    -- Button: set all included players to full duration
-                    if imgui.SmallButton('Set all time = full') then
-                        for _, pl in ipairs(plist) do
-                            local m = sess.management[pl]
-                            if m then
-                                if m.include ~= false then
-                                    m.minutes = duration
-                                end
-                            end
-                        end
-                        if store and sess and sess.is_event then
-                            store.save(sess)
-                        end
-                    end
-
-                    imgui.Separator()
-
-                    -- Management table (Include + Time + Paid/Delivered)
-                    local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
-                    if imgui.BeginTable('tbl_manage', 5, TFLAGS) then
-                        imgui.TableSetupColumn('Name')
-                        imgui.TableSetupColumn('Include')
-                        imgui.TableSetupColumn('Time')
-                        imgui.TableSetupColumn('Glass paid')
-                        imgui.TableSetupColumn('Currency delivered')
-                        imgui.TableHeadersRow()
-
-                        for _, pl in ipairs(plist) do
-                            local m = sess.management[pl]
-                            if m == nil then
-                                sess.management[pl] = {
-                                    include = true,
-                                    minutes = duration,
-                                    glass_paid = false,
-                                    currency_delivered = false,
-                                }
-                                m = sess.management[pl]
-                                if store and sess and sess.is_event then
-                                    store.save(sess)
-                                end
-                            end
-
-                            if type(m.minutes) ~= 'number' then
-                                m.minutes = duration
-                            end
-                            if m.minutes < 0 then
-                                m.minutes = 0
-                            end
-                            if m.include == nil then
-                                m.include = true
-                            end
-
-                            imgui.TableNextRow()
-
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextColored(C.NAME, pl)
-
-                            imgui.TableSetColumnIndex(1)
-                            do
-                                local val = { m.include == true }
-                                if imgui.Checkbox('##inc_' .. pl, val) then
-                                    m.include = val[1]
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                            end
-
-                            imgui.TableSetColumnIndex(2)
-                            do
-                                local h = math.floor(m.minutes / 60)
-                                local mi = m.minutes - h * 60
-
-                                imgui.PushItemWidth(50)
-                                local new_h = combo_int('##mh_' .. pl, h, 0, 12, nil)
-                                imgui.PopItemWidth()
-
-                                imgui.SameLine()
-                                imgui.TextUnformatted('h')
-                                imgui.SameLine()
-
-                                imgui.PushItemWidth(50)
-                                local new_m = combo_int('##mm_' .. pl, mi, 0, 55, '%02d')
-                                imgui.PopItemWidth()
-
-                                if new_h ~= h or new_m ~= mi then
-                                    m.minutes = new_h * 60 + new_m
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                            end
-
-                            imgui.TableSetColumnIndex(3)
-                            do
-                                local val = { m.glass_paid == true }
-                                if imgui.Checkbox('##gp_' .. pl, val) then
-                                    m.glass_paid = val[1]
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                            end
-
-                            imgui.TableSetColumnIndex(4)
-                            do
-                                local val = { m.currency_delivered == true }
-                                if imgui.Checkbox('##cd_' .. pl, val) then
-                                    m.currency_delivered = val[1]
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                            end
-                        end
-
-                        imgui.EndTable()
-                    end
-
-                    imgui.Separator()
-
-                    -- Manual currency (units)
-                    sess.split.manual_units = sess.split.manual_units or {}
-
-                    -- Drops total (units) (read-only)
-                    local detected_units = {}
-                    for name, qty in pairs(sess.drops.currency_total or {}) do
-                        if is_cur(name) then
-                            local units = to_units(name, qty)
-                            local base = base_cur(name)
-                            detected_units[base] = (detected_units[base] or 0) + units
-                        end
-                    end
-
-                    do
-                        imgui.TextUnformatted('Manual currency (units)')
-                        imgui.SameLine()
-                        if imgui.SmallButton('Reset manual') then
-                            sess.split.manual_units = {}
-                            if store and sess and sess.is_event then
-                                store.save(sess)
-                            end
-                        end
-
-                        local bases_known = { 'Bronzepiece', 'Whiteshell', 'Byne Bill' }
-
-                        if imgui.BeginTable('tbl_manual_currency', 4, TF_BORDER) then
-                            imgui.TableSetupColumn('Currency')
-                            imgui.TableSetupColumn('Drops total')
-                            imgui.TableSetupColumn('Add')
-                            imgui.TableSetupColumn('Total')
-                            imgui.TableHeadersRow()
-
-                            for _, base in ipairs(bases_known) do
-                                local drops_total = tonumber(detected_units[base]) or 0
-
-                                local addv = tonumber(sess.split.manual_units[base]) or 0
-                                if addv < 0 then addv = 0 end
-
-                                local totalv = drops_total + addv
-
-                                imgui.TableNextRow()
-                                imgui.TableSetColumnIndex(0)
-                                imgui.TextColored(C.CUR, display_cur(base))
-
-                                imgui.TableSetColumnIndex(1)
-                                imgui.TextColored(C.QTY, tostring(drops_total))
-
-                                imgui.TableSetColumnIndex(2)
-                                imgui.PushItemWidth(140)
-                                local v = { addv }
-                                if imgui.InputInt('##man_' .. base, v) then
-                                    local nv = tonumber(v[1]) or 0
-                                    if nv < 0 then nv = 0 end
-                                    sess.split.manual_units[base] = nv
-                                    if store and sess and sess.is_event then
-                                        store.save(sess)
-                                    end
-                                end
-                                imgui.PopItemWidth()
-
-                                imgui.TableSetColumnIndex(3)
-                                imgui.TextColored(C.QTY, tostring(totalv))
-                            end
-
-                            imgui.EndTable()
-                        end
-
-                        imgui.Separator()
-                    end
-
-
-                    -- Compute split (time-weighted, only included players)
-                    local glass_price = tonumber(sess.split and sess.split.glass_price) or 1000000
-                    if glass_price < 0 then glass_price = 0 end
-
-                    local agg = {}
-                    for name, qty in pairs(sess.drops.currency_total or {}) do
-                        if is_cur(name) then
-                            local units = to_units(name, qty)
-                            local base = base_cur(name)
-                            agg[base] = (agg[base] or 0) + units
-                        end
-                    end
-
-                    for base, add in pairs(sess.split.manual_units or {}) do
-                        local v = tonumber(add) or 0
-                        if v > 0 then
-                            agg[base] = (agg[base] or 0) + v
-                        end
-                    end
-
-                    local bases = keys(agg)
-
-
-                    local total_weight = 0
-                    for _, pl in ipairs(plist) do
-                        local m = sess.management[pl]
-                        if m and m.include ~= false then
-                            total_weight = total_weight + (m.minutes or 0)
-                        end
-                    end
-
-                    if total_weight <= 0 then
-                        imgui.TextDisabled('No included time set.')
-                    else
-                        local used = {}
-                        for _, base in ipairs(bases) do
-                            used[base] = 0
-                        end
-                        local used_glass = 0
-
-                        local per_player = {}
-                        for _, pl in ipairs(plist) do
-                            local m = sess.management[pl] or {}
-                            local mins = (m.include ~= false) and (m.minutes or 0) or 0
-                            local share = {}
-
-                            for _, base in ipairs(bases) do
-                                local units = agg[base] or 0
-                                local v = math.floor((units * mins) / total_weight)
-                                share[base] = v
-                                used[base] = (used[base] or 0) + v
-                            end
-
-                            local glass = math.floor((glass_price * mins) / total_weight)
-                            used_glass = used_glass + glass
-
-                            per_player[pl] = { mins = mins, share = share, glass = glass }
-                        end
-
-                        imgui.TextUnformatted('Split')
-                        local cols = 2 + #bases + 1
-                        if imgui.BeginTable('tbl_time_split', cols, TF_BORDER) then
-                            imgui.TableSetupColumn('Player')
-                            imgui.TableSetupColumn('Mins')
-                            for _, base in ipairs(bases) do
-                                imgui.TableSetupColumn(display_cur(base))
-                            end
-                            imgui.TableSetupColumn('Glass (gil)')
-                            imgui.TableHeadersRow()
-
-                            for _, pl in ipairs(plist) do
-                                local row = per_player[pl]
-                                imgui.TableNextRow()
-
-                                imgui.TableSetColumnIndex(0)
-                                imgui.TextColored(C.NAME, pl)
-
-                                imgui.TableSetColumnIndex(1)
-                                imgui.TextColored(C.QTY, tostring(row.mins))
-
-                                local col = 2
-                                for _, base in ipairs(bases) do
-                                    imgui.TableSetColumnIndex(col)
-                                    imgui.TextColored(C.QTY, tostring(row.share[base] or 0))
-                                    col = col + 1
-                                end
-
-                                imgui.TableSetColumnIndex(col)
-                                imgui.TextColored(C.QTY, fmt_n(row.glass))
-                            end
-
-                            imgui.EndTable()
-                        end
-
-                        imgui.Separator()
-                        imgui.TextUnformatted('Remainder')
-
-                        if imgui.BeginTable('tbl_remainder', 2, TF_BORDER) then
-                            imgui.TableSetupColumn('Item')
-                            imgui.TableSetupColumn('Units')
-                            imgui.TableHeadersRow()
-
-                            for _, base in ipairs(bases) do
-                                local rem = (agg[base] or 0) - (used[base] or 0)
-                                imgui.TableNextRow()
-                                imgui.TableSetColumnIndex(0)
-                                imgui.TextColored(C.CUR, display_cur(base))
-                                imgui.TableSetColumnIndex(1)
-                                imgui.TextColored(rem > 0 and C.LOST or C.QTY, tostring(rem))
-                            end
-
-                            local rem_glass = glass_price - used_glass
-                            imgui.TableNextRow()
-                            imgui.TableSetColumnIndex(0)
-                            imgui.TextColored(C.ITEM, 'Timeless Hourglass')
-                            imgui.TableSetColumnIndex(1)
-                            imgui.TextColored(rem_glass > 0 and C.LOST or C.QTY, fmt_n(rem_glass))
-
-                            imgui.EndTable()
-                        end
-                    end -- <-- THIS end closes: else (total_weight > 0)
-                end -- <-- closes: if not (sess and sess.is_event) then ... else ...
-
-                imgui.EndTabItem()
-            end
-
-            ---------------------------------------------------------------- SETTINGS
-            if imgui.BeginTabItem('Settings') then
-                draw_settings_panel(cfg, C)
-                imgui.EndTabItem()
-            end
-        end -- compact / full
-        imgui.EndTabBar()
-    end -- BeginTabBar
+        -- Event-specific tabs/body.
+    local event_ctx = {
+        imgui = imgui,
+        ui = ui,
+        sess = sess,
+        event_id = ui.selected_event or (sess and sess.event_id) or ui.active_event,
+        cfg = cfg,
+        C = C,
+        V = cfg.visual_colors,
+        TF_BORDER = TF_BORDER,
+        keys = keys,
+        is_cur = is_cur,
+        is_hundo = is_hundo,
+        title = title,
+        lost_name = lost_name,
+        to_units = to_units,
+        base_cur = base_cur,
+        display_cur = display_cur,
+        is_valid_player_name = is_valid_player_name,
+        default_event_minutes = default_event_minutes,
+        fmt_n = fmt_n,
+        store = store,
+        chip_color_for_item = function(name)
+            return chip_color_for_item(name, cfg)
+        end,
+        draw_treasure_table = draw_treasure_table,
+        draw_settings_panel = draw_settings_panel,
+    }
+
+    local tab_style_colors, tab_style_vars = push_tabs_style(event_ctx.event_id, cfg, C)
+    event_router.render(ui, event_ctx)
+    if tab_style_vars and tab_style_vars > 0 then
+        imgui.PopStyleVar(tab_style_vars)
+    end
+    if tab_style_colors and tab_style_colors > 0 then
+        imgui.PopStyleColor(tab_style_colors)
+    end
 
     imgui.End()
+    if pushed_window_bg > 0 then
+        imgui.PopStyleColor(pushed_window_bg)
+    end
     if pushed_style > 0 then
         imgui.PopStyleVar(pushed_style)
     end

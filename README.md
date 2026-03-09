@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.6  
+**Version:** 1.0.7  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,53 @@
 ---
 
 ## 📌 Changelog
+### v1.0.7 (English)
+
+- Added a dedicated event router so Dynamis and Limbus keep separate runtime and UI logic.
+- Added full **Limbus** support with its own session flow and zone detection (ID and zone-name fallback).
+- Added Limbus timer parsing for start, extension, time-left sync, and end-of-run message handling.
+- Added Limbus full tabs: **Coins**, **Items**, **Players**, **Key Items**, **Treasure**, **Management**, and **Settings**.
+- Added **Key Items** status view in Limbus (Cosmo-Cleanse, Red Card, Black Card, White Card).
+- Added Limbus **Management** split for coins with include/delivered tracking.
+- Limbus split participants are now locked from the run start snapshot, so late joins do not count by default.
+- Improved Limbus end behavior: run can stay active after timer end while pool items remain; it closes once pool is done or on zone out.
+- Improved reconnect handling so active sessions are saved before character state reset and can resume cleanly.
+- Updated compact header flow: **Dynamis** and **Limbus** buttons open full mode for that event, and **Back** always returns to compact mode.
+- Fixed compact header compatibility on clients where `imgui.Col` constants are not exposed.
+- Added a new **All** tab in Limbus to show merged totals (coins + items) and lost values in one table.
+- Limbus run files are now created only when the run actually starts (run-start message), not when entering Apollyon/Temenos lobby.
+- Added automatic **Run N** session naming for same-day repeats (Run 1, Run 2, ...), and event-filtered History lists.
+- Added floor-transition tracking with packet confirmation, plus gate/vortex ready state updates tied to transitions.
+- Added **Gate/Vortex** open detection for messages like **"The gate opens..."** and **"A vortex materializes..."**.
+- Added default **Limbus chip colors** aligned with each chip type, used consistently in compact and full views.
+- Added a Limbus **Gate/Vortex state icon** (open/closed) in the top status area.
+- Refined compact Limbus status to focus on time, floor, and gate/vortex state while the run is active.
+- Updated the interface style with rounded event buttons, improved compact header behavior, and refreshed event tabs for Limbus/Dynamis.
+
+### v1.0.7 (Español)
+
+- Añadido un router de eventos para separar por completo la lógica y UI de Dynamis y Limbus.
+- Añadido soporte completo para **Limbus** con flujo de sesión propio y detección de zona por ID y por nombre.
+- Añadido parser de tiempo de Limbus para inicio, extensiones, sincronización por minutos restantes y fin real de run.
+- Añadidas pestañas completas en Limbus: **Coins**, **Items**, **Players**, **Key Items**, **Treasure**, **Management** y **Settings**.
+- Añadida vista de **Key Items** en Limbus (Cosmo-Cleanse, Red Card, Black Card y White Card).
+- Añadida pestaña **Management** de Limbus para el split de coins con control de include/entregado.
+- Los participantes del split de Limbus ahora se bloquean al inicio de run, para que las entradas tardías no cuenten por defecto.
+- Mejorado el cierre de Limbus: tras terminar el tiempo, la sesión sigue viva mientras quede pool; se cierra al vaciar pool o salir de zona.
+- Mejorado el manejo de reconexión guardando la sesión activa antes de resetear estado del personaje.
+- Ajustado el flujo de cabecera en compacto: botones **Dynamis** y **Limbus** abren su menú en full, y **Back** siempre vuelve a compacto.
+- Corregida compatibilidad en cabecera compacta para clientes donde no existen las constantes `imgui.Col`.
+- Añadida una nueva pestaña **All** en Limbus para ver en una sola tabla los totales combinados (coins + items) y perdidos.
+- Los archivos de run de Limbus ahora se crean solo cuando la run empieza de verdad (mensaje de inicio), no al entrar al lobby de Apollyon/Temenos.
+- Añadido nombrado automático de sesiones con **Run N** para repeticiones el mismo día (Run 1, Run 2, ...), y filtrado por evento en el historial.
+- Añadido seguimiento de cambio de piso con confirmación por paquetes, junto al estado de gate/vortex ligado a esas transiciones.
+- Añadida detección de apertura de **Gate/Vortex** para mensajes como **"The gate opens..."** y **"A vortex materializes..."**.
+- Añadidos **colores por defecto de chips en Limbus** según su tipo, aplicados en modo compacto y full.
+- Añadido un **icono de estado Gate/Vortex** (abierto/cerrado) en la zona de estado superior de Limbus.
+- Ajustado el estado compacto de Limbus para centrarse en tiempo, piso y estado de gate/vortex mientras la run está activa.
+- Actualizado el estilo de interfaz con botones de evento más redondeados, mejor cabecera en compacto y pestañas renovadas para Limbus/Dynamis.
+
+---
 ### v1.0.6 (English)
 
 - Fixed compact/full resizing so the window no longer grows for no reason when the pool is empty.
@@ -299,6 +346,3 @@ Todo se almacena en un único archivo de sesión por zona y fecha, listo para re
     <td><img src="https://github.com/user-attachments/assets/b815ae27-6f85-4026-a0b8-29a9f7b06ae8"  width="320" alt="Currency delivered check"/></td>
   </tr>
 </table>
-
-
-

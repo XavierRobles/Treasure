@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.0.6
+-- Versión: 1.0.7
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.6'
+addon.version = '1.0.7'
 
 require('common')
 local settings = require('settings')
@@ -18,6 +18,7 @@ local core = require('core')
 local parser = require('parser')
 local store = require('store')
 local ui = require('ui')
+local event_router = require('event_router')
 local timeutil = require('timeutil')
 local fs = ashita.fs
 local chat = require('chat')
@@ -53,33 +54,162 @@ local DOT_SMALL    = string.char(0x81, 0x45) -- ・
 ------------------------------------------------------------------ estado
 local session, idle_session, lastPool, lastSave = nil, nil, 0, 0
 local cfg, lastPrefSave = nil, 0
+local lastLimbusPoolProbe = 0
+local limbusExitSeenAt = nil
+
+local LIMBUS_POST_EXIT_GRACE = 20
 
 local function print_local(msg)
     print(chat.header('Treasure'):append(chat.message(msg or '')))
 end
 
-local function ensure_dynamis_timer(sess, zid)
-    if not sess then
+local function session_event_id(sess)
+    local id = tostring((sess and sess.event_id) or ''):lower()
+    if id == '' then
+        return 'dynamis'
+    end
+    return id
+end
+
+local function dispatch_event_packet(direction, packet)
+    if not (session and session.is_event and packet) then
         return
     end
 
-    sess.dynamis_timer = sess.dynamis_timer or {
-        expel_at = nil,
-        pending_ext = 0,
-        fallback_end_at = nil,
-        desynced = false,
-        last_sync_at = nil,
-    }
-
-    local start = tonumber(sess.start_time) or os.time()
-    sess.start_time = start
-
-    local max_min = core.dynamis_max_minutes(zid or sess.zone_id)
-    sess.dynamis_timer.fallback_end_at = start + (max_min * 60)
-
-    if sess.dynamis_timer.expel_at and sess.dynamis_timer.expel_at > sess.dynamis_timer.fallback_end_at then
-        sess.dynamis_timer.fallback_end_at = sess.dynamis_timer.expel_at
+    local ev_id = session_event_id(session)
+    local handler = event_router.get(ev_id)
+    if not handler then
+        return
     end
+
+    if direction == 'in' and handler.on_packet_in then
+        handler.on_packet_in(packet, session)
+    elseif direction == 'out' and handler.on_packet_out then
+        handler.on_packet_out(packet, session)
+    end
+end
+
+local function close_active_session(reason)
+    if not (session and session.is_event) then
+        limbusExitSeenAt = nil
+        session = nil
+        return
+    end
+
+    local ev_id = session_event_id(session)
+    local handler = event_router.get(ev_id)
+    if handler and handler.on_leave then
+        handler.on_leave(session, { reason = reason })
+    else
+        session.ended = true
+        store.save(session, { force = true })
+    end
+    limbusExitSeenAt = nil
+    session = nil
+end
+
+local function count_live_pool_items(sess)
+    local pool = sess and sess.drops and sess.drops.pool_live
+    if type(pool) ~= 'table' then
+        return 0
+    end
+
+    local count = 0
+    for _, row in pairs(pool) do
+        if type(row) == 'table' and (tonumber(row.item_id) or 0) ~= 0 then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function should_keep_limbus_session(sess, now_tick, refresh_pool, allow_grace, force_refresh)
+    if not (sess and sess.is_event and session_event_id(sess) == 'limbus') then
+        return false
+    end
+    if sess.limbus_run_started ~= true then
+        return false
+    end
+    if allow_grace == nil then
+        allow_grace = true
+    end
+
+    local now_os = os.time()
+    local ended = (sess.limbus_run_ended == true)
+    if not ended then
+        local lt = sess.limbus_timer or {}
+        local end_at = tonumber(lt.end_at)
+        local fallback_end = tonumber(lt.fallback_end_at)
+        if (end_at and end_at <= now_os) or (fallback_end and fallback_end <= now_os) then
+            ended = true
+            sess.limbus_run_ended = true
+            sess.limbus_run_ended_at = tonumber(sess.limbus_run_ended_at) or now_os
+        end
+    end
+    if not ended then
+        return false
+    end
+
+    if refresh_pool and (force_refresh or ((now_tick - lastLimbusPoolProbe) > 0.40)) then
+        parser.update_treasure_pool(sess)
+        lastLimbusPoolProbe = now_tick
+    end
+
+    if count_live_pool_items(sess) > 0 then
+        limbusExitSeenAt = nil
+        return true
+    end
+
+    if not allow_grace then
+        limbusExitSeenAt = nil
+        return false
+    end
+
+    local seen_at = tonumber(limbusExitSeenAt)
+    if not seen_at then
+        limbusExitSeenAt = now_tick
+        return true
+    end
+
+    if (now_tick - seen_at) < LIMBUS_POST_EXIT_GRACE then
+        return true
+    end
+
+    limbusExitSeenAt = nil
+    return false
+end
+
+local function finalize_limbus_run(sess, reason)
+    if not (sess and sess.is_event and session_event_id(sess) == 'limbus') then
+        return
+    end
+    if not (sess.limbus_run_started == true and sess.limbus_run_ended == true) then
+        return
+    end
+
+    sess.ended = true
+    store.save(sess, { force = true, event_id = 'limbus' })
+
+    -- Keep the zone session alive, but reset to "waiting for next run".
+    sess.limbus_run_started = false
+    sess.limbus_run_ended = false
+    sess.limbus_run_ended_at = nil
+    sess.limbus_start_participants = {}
+    sess.limbus_start_participants_locked = false
+    sess.limbus_gate_ready = false
+    sess.limbus_gate_ready_until = nil
+    sess.limbus_gate_count = 0
+    sess.limbus_floor = 1
+    sess.limbus_floor_changes = 0
+    sess.limbus_transition_pending = false
+    sess.limbus_transition_pending_at = nil
+    if sess.limbus_timer then
+        sess.limbus_timer.end_at = nil
+        sess.limbus_timer.fallback_end_at = nil
+        sess.limbus_timer.desynced = false
+        sess.limbus_timer.last_sync_at = nil
+    end
+    limbusExitSeenAt = nil
 end
 
 
@@ -184,9 +314,47 @@ end
 local DEFAULT_CONFIG = {
     visible = true, theme = 'Default', alpha = 0.90, timeout = 30,
     colors = {
-        QTY = { 1, 1, 1, 1 }, CUR = { 0.1725, 1, 0.0431, 1 },
+        QTY = { 1, 1, 1, 1 }, CUR = { 1, 0.84, 0, 1 },
         ITEM = { 0, 1, 0.9961, 1 }, HUNDO = { 1, 0.84, 0, 1 },
         NAME = { 0.55, 0.78, 1, 1 }, LOST = { 1, 0.35, 0.35, 1 },
+    },
+    chip_colors = {
+        magenta = { 0.5255, 0.3373, 0.8471, 1.0 },
+        smoky = { 0.4431, 0.5098, 0.5922, 1.0 },
+        emerald = { 0.2118, 0.5608, 0.4510, 1.0 },
+        scarlet = { 0.5961, 0.3255, 0.1373, 1.0 },
+        ivory = { 0.6549, 0.5216, 0.0235, 1.0 },
+        charcoal = { 0.4392, 0.5059, 0.5882, 1.0 },
+        smalt = { 0.1294, 0.4980, 0.7176, 1.0 },
+        orchid = { 0.5373, 0.3412, 0.8627, 1.0 },
+        cerulean = { 0.1333, 0.5216, 0.7490, 1.0 },
+        silver = { 0.4745, 0.5373, 0.6196, 1.0 },
+        metal = { 0.62, 0.66, 0.72, 1.0 },
+        niveous = { 0.93, 0.96, 1.00, 1.0 },
+        crepuscular = { 0.60, 0.54, 0.68, 1.0 },
+    },
+    visual_colors = {
+        HUD_TEXT = { 0.84, 0.87, 0.91, 1.00 },
+        EVENT_DYNAMIS = { 1.00, 0.62, 0.26, 0.90 },
+        EVENT_LIMBUS = { 0.18, 0.77, 0.71, 0.90 },
+        STATE_OK = { 0.24, 0.86, 0.52, 1.00 },
+        STATE_ALERT = { 1.00, 0.30, 0.31, 1.00 },
+        WINDOW_BG = { 0.07, 0.08, 0.10, 0.94 },
+        HEADER_BG = { 0.09, 0.09, 0.10, 0.96 },
+        HEADER_BORDER = { 0.45, 0.41, 0.30, 0.65 },
+        HEADER_TEXT = { 0.90, 0.90, 0.91, 1.00 },
+    },
+    button_style = {
+        rounding = 9.0,
+        height = 25.0,
+        border_selected = 1.8,
+        border_idle = 0.0,
+        selected_bg = { 0.22, 0.20, 0.16, 0.96 },
+        selected_border = { 0.80, 0.69, 0.44, 0.92 },
+        selected_text = { 0.94, 0.90, 0.76, 1.00 },
+        idle_bg = { 0.08, 0.08, 0.09, 0.95 },
+        idle_border = { 0.35, 0.33, 0.28, 0.72 },
+        idle_text = { 0.78, 0.78, 0.78, 1.00 },
     },
     layout = {
         full = {
@@ -284,6 +452,16 @@ end
 
 ------------------------------------------------------------------ reset all
 local function reset_state_for_new_char()
+    if session and session.is_event then
+        local ev_id = session_event_id(session)
+        local can_persist = true
+        if ev_id == 'limbus' and session.limbus_run_started ~= true then
+            can_persist = false
+        end
+        if can_persist then
+            store.save(session, { force = true, event_id = ev_id })
+        end
+    end
     save_character_settings(cfg)
     cfg, session, idle_session = nil, nil, nil
     lastPool, lastSave = 0, 0
@@ -291,6 +469,7 @@ local function reset_state_for_new_char()
     ui._layout_mode, ui._tre_init = nil, false
     ui.tre_col_w, ui._last_compact_count = nil, nil
     ui._last_compact_height, ui._top_area = nil, nil
+    ui.active_event = 'dynamis'
 end
 
 ------------------------------------------------------------------ party list
@@ -325,7 +504,11 @@ local function update_party_members()
     end
 
     local myZid = party:GetMemberZone(0)
-    if not (core.is_dynamis(myZid) and session.zone_id == myZid) then
+    local myEventId = event_router.match_zone(myZid)
+    if not (myEventId and session.zone_id == myZid and myEventId == session_event_id(session)) then
+        return
+    end
+    if session_event_id(session) == 'limbus' and session.limbus_run_started ~= true then
         return
     end
 
@@ -440,7 +623,8 @@ ashita.events.register('command', 'treasure_cmd', function(e)
 
     local function ensure_event()
         if not (session and session.is_event and session.drops and session.drops.currency_total) then
-            print_local('No active Dynamis session.')
+            local ev_name = event_router.title(session and session.event_id or ui.active_event)
+            print_local('No active ' .. tostring(ev_name) .. ' session.')
             return false
         end
         return true
@@ -563,6 +747,11 @@ ashita.events.register('packet_in', 'login_detector', function(e)
             reset_state_for_new_char()
         end
     end
+    dispatch_event_packet('in', e)
+end)
+
+ashita.events.register('packet_out', 'treasure_packet_out', function(e)
+    dispatch_event_packet('out', e)
 end)
 
 ------------------------------------------------------------------ main loop
@@ -588,64 +777,46 @@ ashita.events.register('d3d_present', 'treasure_present', function()
     ---------------------------------------------------------------- session
     local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
     local zoneName = rm:GetString('zones.names', zid) or ('Zone ' .. zid)
-    local in_dynamis = core.is_dynamis(zid)
+    local active_event_id, active_handler = event_router.match_zone(zid)
 
-    if in_dynamis then
-        -- Entramos en Dynamis: restaurar o crear sesión
-        if not session then
+    if active_event_id and active_handler and active_handler.on_enter then
+        ui.active_event = active_event_id
+
+        local same_event_active = session
+                and session.is_event
+                and (session_event_id(session) == active_event_id)
+                and (tonumber(session.zone_id) == tonumber(zid))
+
+        if not same_event_active then
+            close_active_session('switch')
+
             local now = os.time()
-            local saved = store.load(zid, now)
+            local opened, banner = active_handler.on_enter({
+                zid = zid,
+                zone_name = zoneName,
+                now = now,
+            })
 
-            if saved then
-                ----------------------------------------------------------------
-                -- Reanudamos una sesión guardada
-                ----------------------------------------------------------------
-                session = saved
-                ensure_dynamis_timer(session, zid)
-                session.ended = false
-                session.is_event = true
-                session.management = session.management or {}
-                session.split = session.split or { event_type = 'Custom', duration_minutes = 0 }
-
-                print(chat.header('Treasure'):append(chat.message(
-                        string.format('%s continues. Inventorys ready, ambition reloaded.', zoneName))))
-
-
-            else
-                ----------------------------------------------------------------
-                -- Creamos una nueva sesión
-                ----------------------------------------------------------------
-                local new_session = parser.new_session(zid)
-                if not new_session then
-                    return
-                end
-
-                session = new_session
-                ensure_dynamis_timer(session, zid)
+            if opened then
+                session = opened
                 session.is_event = true
                 session.zone_id = zid
-                session.start_time = now
-                session.management = {}
-                session.split = session.split or { event_type = 'Custom', duration_minutes = 0 }
-                session.ended = false
+                session.event_id = active_event_id
 
-                store.save(session)
+                -- reiniciamos la vista de historial
+                ui.history_session, ui.history_idx = nil, 0
 
-                print(chat.header('Treasure'):append(chat.message(
-                        string.format('Entering %s with 0 hope and 100%% hundo ambition..', zoneName))))
+                if banner and banner ~= '' then
+                    print(chat.header('Treasure'):append(chat.message(banner)))
+                end
             end
-
-            -- reiniciamos la vista de historial
-            ui.history_session, ui.history_idx = nil, 0
+        elseif session_event_id(session) == 'limbus' then
+            limbusExitSeenAt = nil
         end
-
     else
-        -- salimos de Dynamis (lock the session so it can't be modified anymore)
-        if session and session.is_event then
-            session.ended = true
-            store.save(session, { force = true })
+        if not should_keep_limbus_session(session, now_tick, true, false, true) then
+            close_active_session('zone_exit')
         end
-        session = nil
     end
 
     ---------------------------------------------------------------- draw
@@ -662,7 +833,21 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         if draw_session == session or draw_session == idle_session then
             parser.update_treasure_pool(draw_session)
         end
+        if session and session.is_event and session_event_id(session) == 'limbus' then
+            if count_live_pool_items(session) > 0 then
+                limbusExitSeenAt = nil
+            end
+        end
         lastPool = now_tick
+    end
+
+    -- While still inside Limbus zone, finalize the run once timer ended and pool is done.
+    if session and session.is_event and session_event_id(session) == 'limbus' then
+        if session.limbus_run_started == true and session.limbus_run_ended == true then
+            if not should_keep_limbus_session(session, now_tick, true, false, true) then
+                finalize_limbus_run(session, 'pool_done')
+            end
+        end
     end
 
     -- Actualiza la lista de party/alianza aproximadamente cada 2 segundos.
@@ -679,12 +864,17 @@ ashita.events.register('d3d_present', 'treasure_present', function()
 
     if session and session.is_event and not ui.history_session then
         if (now_tick - lastSave) > 30 then
-            store.save(session);
+            local can_persist = true
+            if session_event_id(session) == 'limbus' and session.limbus_run_started ~= true then
+                can_persist = false
+            end
+            if can_persist then
+                store.save(session);
+            end
             lastSave = now_tick
         end
         if session.paused and (os.time() - session.paused) > (cfg.timeout or 30) * 60 then
-            store.save(session, { force = true });
-            session = nil
+            close_active_session('timeout')
         end
     end
 
@@ -697,16 +887,23 @@ end)
 
 ------------------------------------------------------------------ zone salida
 ashita.events.register('zone_change', 'treasure_zone', function()
-    if session and session.is_event then
-        session.ended = true
-        store.save(session, { force = true })
+    if session and session.is_event and session_event_id(session) == 'limbus'
+            and should_keep_limbus_session(session, timeutil.now(), true, false, true) then
+        limbusExitSeenAt = limbusExitSeenAt or timeutil.now()
+        return
     end
-    session = nil
+    close_active_session('zone_change')
 end)
 
 ------------------------------------------------------------------ texto chat
 ashita.events.register('text_in', 'treasure_text', function(e)
     if session and session.is_event then
-        parser.handle_line(e.message_modified, session)
+        local ev_id = session_event_id(session)
+        local handler = event_router.get(ev_id)
+        if handler and handler.on_text then
+            handler.on_text(e.message_modified, session)
+        else
+            parser.handle_line(e.message_modified, session)
+        end
     end
 end)

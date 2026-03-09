@@ -63,9 +63,126 @@ local function ztag(zid)
     return tostring(zid)
 end
 
-local function fname(zid, ts, pname)
-    return ('Dynamis - %s - %s - %s.lua')
-            :format(ztag(zid), os.date('%Y-%m-%d', ts), pname)
+local function normalize_event_id(event_id)
+    local id = tostring(event_id or ''):lower()
+    if id == '' then
+        return 'dynamis'
+    end
+    return id
+end
+
+local function title_case(s)
+    return tostring(s or ''):gsub("(%a)([%w_']*)", function(a, b)
+        return a:upper() .. b:lower()
+    end)
+end
+
+local function event_prefix(event_id)
+    local id = normalize_event_id(event_id)
+    if id == 'dynamis' then
+        return 'Dynamis'
+    end
+    return title_case(id)
+end
+
+local function fname(event_id, zid, ts, pname, run_index)
+    local run = tonumber(run_index) or 1
+    if run < 1 then
+        run = 1
+    end
+    return ('%s - %s - %s - Run %d - %s.lua')
+            :format(event_prefix(event_id), ztag(zid), os.date('%Y-%m-%d', ts), run, pname)
+end
+
+local function esc_lua_pattern(s)
+    return tostring(s or ''):gsub('([%^%$%(%)%%%.%[%]%*%+%-%?])', '%%%1')
+end
+
+local function parse_filename_meta(filename)
+    local f = tostring(filename or '')
+
+    local ev, zone, date, run, player = f:match('^(.-)%s%-%s(.-)%s%-%s(%d%d%d%d%-%d%d%-%d%d)%s%-%s[Rr]un%s+(%d+)%s%-%s(.+)%.lua$')
+    if ev and zone and date and run and player then
+        return {
+            event_prefix = ev,
+            zone_tag = zone,
+            date = date,
+            run_index = tonumber(run) or 1,
+            player = player,
+        }
+    end
+
+    -- Legacy format: "<Event> - <zone> - <date> - <player>.lua"
+    ev, zone, date, player = f:match('^(.-)%s%-%s(.-)%s%-%s(%d%d%d%d%-%d%d%-%d%d)%s%-%s(.+)%.lua$')
+    if ev and zone and date and player then
+        return {
+            event_prefix = ev,
+            zone_tag = zone,
+            date = date,
+            run_index = 1,
+            player = player,
+        }
+    end
+
+    return nil
+end
+
+local function scan_session_files()
+    local files = {}
+    local sep = package.config:sub(1, 1)
+    local cmd
+
+    if sep == '\\' then
+        cmd = 'dir /b "' .. root:gsub('/', '\\') .. '"'
+    else
+        cmd = 'ls -1 "' .. root .. '"'
+    end
+
+    local p = io.popen(cmd)
+    if p then
+        for line in p:lines() do
+            if line:match('%.lua$') then
+                files[#files + 1] = line
+            end
+        end
+        p:close()
+    end
+
+    return files
+end
+
+local function matching_run_files(event_id, zid, pname, day)
+    local out = {}
+    local prefix = event_prefix(event_id)
+    local tag1 = ztag(zid)
+    local tag2 = tostring(zid)
+    local pref_pat = '^' .. esc_lua_pattern(prefix) .. '%s%-%s'
+
+    for _, file in ipairs(scan_session_files()) do
+        if file:match(pref_pat) then
+            local meta = parse_filename_meta(file)
+            if meta and meta.date == day and meta.player == pname then
+                local zone_ok = (meta.zone_tag == tag1) or (meta.zone_tag == tag2)
+                if zone_ok then
+                    out[#out + 1] = {
+                        name = file,
+                        run_index = tonumber(meta.run_index) or 1,
+                    }
+                end
+            end
+        end
+    end
+
+    table.sort(out, function(a, b)
+        local ra = tonumber(a.run_index) or 1
+        local rb = tonumber(b.run_index) or 1
+        if ra ~= rb then
+            return ra > rb
+        end
+        return tostring(a.name) > tostring(b.name)
+    end)
+
+    return out
 end
 
 local function dump(tbl, ind)
@@ -100,12 +217,16 @@ function store.save(sess, opts)
 
     local force = false
     local min_interval = SAVE_MIN_INTERVAL
+    local event_id_opt = nil
     if opts == true then
         force = true
     elseif type(opts) == 'table' then
         force = opts.force == true
         if tonumber(opts.min_interval) then
             min_interval = math.max(0, tonumber(opts.min_interval))
+        end
+        if type(opts.event_id) == 'string' then
+            event_id_opt = opts.event_id
         end
     end
 
@@ -128,7 +249,22 @@ function store.save(sess, opts)
     if sess._filename and sess._filename ~= '' then
         filename = sess._filename
     else
-        filename = fname(sess.zone_id, sess.start_time, pname)
+        local ev_id = normalize_event_id(sess.event_id or event_id_opt)
+        local day = os.date('%Y-%m-%d', tonumber(sess.start_time) or os.time())
+        local run_idx = tonumber(sess.run_index)
+        if not run_idx or run_idx < 1 then
+            local used = {}
+            for _, it in ipairs(matching_run_files(ev_id, sess.zone_id, pname, day)) do
+                local idx = tonumber(it.run_index) or 1
+                used[idx] = true
+            end
+            run_idx = 1
+            while used[run_idx] do
+                run_idx = run_idx + 1
+            end
+            sess.run_index = run_idx
+        end
+        filename = fname(ev_id, sess.zone_id, sess.start_time, pname, run_idx)
         sess._filename = filename
     end
 
@@ -159,7 +295,7 @@ function store.save(sess, opts)
 end
 
 
-function store.load(zid)
+function store.load(zid, opts)
     local ent = GetPlayerEntity()
     local pname = (ent and ent.Name)
     if not pname or pname == "UNKNOWN" then
@@ -167,44 +303,75 @@ function store.load(zid)
         return nil
     end
 
-    local today = os.date('%Y-%m-%d')
-    local tag = ztag(zid)
-    local pattern = ('Dynamis - %s - %s - %s.lua'):format(tag, today, pname)
-    local fullpath = root .. pattern
-
-    -- Backward-compat: old sessions may have been saved as "Dynamis - <zone_id> - ..."
-    if not ashita.fs.exists(fullpath) then
-        local fallback = ('Dynamis - %s - %s - %s.lua'):format(tostring(zid), today, pname)
-        local fallback_path = root .. fallback
-        if ashita.fs.exists(fallback_path) then
-            pattern = fallback
-            fullpath = fallback_path
-        else
-            return nil
+    local ev_id = 'dynamis'
+    if type(opts) == 'string' then
+        ev_id = normalize_event_id(opts)
+    elseif type(opts) == 'table' then
+        if type(opts.event_id) == 'string' then
+            ev_id = normalize_event_id(opts.event_id)
         end
     end
 
-    local ok, sess = pcall(dofile, fullpath)
-    if not ok or not sess then
+    local only_active = true
+    if type(opts) == 'table' and opts.only_active ~= nil then
+        only_active = (opts.only_active == true)
+    end
+
+    local today = os.date('%Y-%m-%d')
+    local candidates = matching_run_files(ev_id, zid, pname, today)
+    if #candidates == 0 then
         return nil
     end
-    if type(sess) == 'table' then
-        sess._filename = pattern
-        if not sess.player_name or sess.player_name == '' then
-            local p2 = pattern:match(' %- ([^%-]+)%.lua$')
-            sess.player_name = p2 or sess.player_name
+
+    for _, cand in ipairs(candidates) do
+        local fullpath = root .. cand.name
+        local ok, sess = pcall(dofile, fullpath)
+        if ok and type(sess) == 'table' then
+            if (not only_active) or (sess.ended ~= true) then
+                sess._filename = cand.name
+
+                if not sess.event_id or sess.event_id == '' then
+                    local meta = parse_filename_meta(cand.name)
+                    local pref = meta and meta.event_prefix or cand.name:match('^(.-)%s%-%s')
+                    sess.event_id = normalize_event_id(pref)
+                end
+                if not sess.player_name or sess.player_name == '' then
+                    local meta = parse_filename_meta(cand.name)
+                    sess.player_name = (meta and meta.player) or sess.player_name
+                end
+                if not sess.run_index then
+                    local meta = parse_filename_meta(cand.name)
+                    sess.run_index = (meta and meta.run_index) or cand.run_index or 1
+                end
+
+                return sess
+            end
         end
     end
-    return sess
+
+    return nil
 end
 
 -- Returns a list of saved session filenames.
-function store.list_sessions()
+-- opts:
+--   { event_id = 'dynamis' | 'limbus' | ... }  -- optional filter
+function store.list_sessions(opts)
+    local filter_event = nil
+    if type(opts) == 'string' then
+        filter_event = normalize_event_id(opts)
+    elseif type(opts) == 'table' and type(opts.event_id) == 'string' then
+        filter_event = normalize_event_id(opts.event_id)
+    end
+
     local now = timeutil.now()
     if list_cache.files and (now - (list_cache.at or 0) <= LIST_CACHE_TTL) then
         local copy = {}
+        local want_prefix = filter_event and (event_prefix(filter_event) .. ' - ') or nil
         for i = 1, #list_cache.files do
-            copy[i] = list_cache.files[i]
+            local n = list_cache.files[i]
+            if (not want_prefix) or (n:sub(1, #want_prefix) == want_prefix) then
+                copy[#copy + 1] = n
+            end
         end
         return copy
     end
@@ -227,11 +394,16 @@ function store.list_sessions()
         return (tonumber(y) or 0) * 10000 + (tonumber(m) or 0) * 100 + (tonumber(d) or 0)
     end
 
+    local function run_key(fname)
+        local meta = parse_filename_meta(fname)
+        return (meta and tonumber(meta.run_index)) or 1
+    end
+
     local p = io.popen(cmd)
     if p then
         for line in p:lines() do
             if line:match('%.lua$') then
-                items[#items + 1] = { name = line, key = date_key(line) }
+                items[#items + 1] = { name = line, key = date_key(line), run = run_key(line) }
             end
         end
         p:close()
@@ -240,6 +412,9 @@ function store.list_sessions()
     table.sort(items, function(a, b)
         if a.key ~= b.key then
             return a.key > b.key
+        end
+        if (a.run or 1) ~= (b.run or 1) then
+            return (a.run or 1) > (b.run or 1)
         end
         return a.name < b.name
     end)
@@ -255,7 +430,19 @@ function store.list_sessions()
     end
     list_cache.at = now
 
-    return files
+    if not filter_event then
+        return files
+    end
+
+    local out = {}
+    local want_prefix = event_prefix(filter_event) .. ' - '
+    for i = 1, #files do
+        local n = files[i]
+        if n:sub(1, #want_prefix) == want_prefix then
+            out[#out + 1] = n
+        end
+    end
+    return out
 end
 
 
@@ -268,11 +455,19 @@ function store.load_file(filename)
     local ok, sess = pcall(dofile, path)
     if ok and type(sess) == 'table' then
         -- Filename convention:
-        -- "Dynamis - <zone_tag> - <YYYY-MM-DD> - <player>.lua"
+        -- "<Event> - <zone_tag> - <YYYY-MM-DD> - Run <n> - <player>.lua"
+        -- Legacy: "<Event> - <zone_tag> - <YYYY-MM-DD> - <player>.lua"
         sess._filename = filename
+        local meta = parse_filename_meta(filename)
+        if not sess.event_id or sess.event_id == '' then
+            local pref = (meta and meta.event_prefix) or filename:match('^(.-)%s%-%s')
+            sess.event_id = normalize_event_id(pref)
+        end
         if not sess.player_name or sess.player_name == '' then
-            local pname = filename:match(' %- ([^%-]+)%.lua$')
-            sess.player_name = pname or sess.player_name
+            sess.player_name = (meta and meta.player) or sess.player_name
+        end
+        if not sess.run_index then
+            sess.run_index = (meta and meta.run_index) or 1
         end
         return sess
     end
