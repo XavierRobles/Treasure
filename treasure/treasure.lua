@@ -201,8 +201,26 @@ local function finalize_limbus_run(sess, reason)
     sess.limbus_gate_count = 0
     sess.limbus_floor = 1
     sess.limbus_floor_changes = 0
+    sess.limbus_floor_stats = {}
+    sess.limbus_path_id = ''
+    sess.limbus_path_label = ''
+    sess.limbus_max_floor = nil
+    sess.limbus_reward_chip = nil
+    sess.limbus_reward_chip_key = nil
+    sess.limbus_is_central = false
+    sess.limbus_central_kind = ''
+    sess.limbus_gunpod = nil
     sess.limbus_transition_pending = false
     sess.limbus_transition_pending_at = nil
+    sess.limbus_sw_day_element = nil
+    sess.limbus_sw_day_element_locked = false
+    sess.limbus_sw_day_element_count = 0
+    sess.limbus_sw_day_element_floor = nil
+    sess.limbus_sw_day_element_detected_at = nil
+    sess.limbus_sw_day_element_last_scan = 0
+    sess.limbus_sw_day_element_not_before = nil
+    sess.limbus_sw_day_element_candidate = nil
+    sess.limbus_sw_day_element_candidate_hits = 0
     if sess.limbus_timer then
         sess.limbus_timer.end_at = nil
         sess.limbus_timer.fallback_end_at = nil
@@ -251,43 +269,162 @@ local function is_ui_fully_hidden()
     return ptr ~= 0 and ashita.memory.read_uint8(ptr + 0xB4) == 1
 end
 
-local hidden_menus = { fulllog = true, equip = true, inventor = true, mnstorag = true, iuse = true,
-                       map0 = true, maplist = true, mapframe = true, scanlist = true, cnqframe = true, conf2win = true,
-                       cfilter = true, textcol1 = true, confyn = true, conf5m = true, conf5win = true, conf5w1 = true,
-                       conf5w2 = true, conf11m = true, conf11l = true, conf11s = true, conf3win = true, conf6win = true,
-                       conf12wi = true, conf13wi = true, fxfilter = true, conf7 = true, conf4 = true, link5 = true,
-                       link12 = true, link13 = true, link3 = true, scresult = true, evitem = true, statcom2 = true,
-                       auc1 = true, moneyctr = true, shopsell = true, comyn = true, auclist = true, auchisto = true,
-                       auc4 = true, post1 = true, post2 = true, stringdl = true, delivery = true, mcr1edlo = true,
-                       mcr2edlo = true, mcrbedit = true, mcresed = true, bank = true, handover = true, itmsortw = true,
-                       sortyn = true, itemctrl = true, loot = true, lootope = true, meritcat = true, merit1 = true,
-                       merit2 = true, merit3 = true, merityn = true, shop = true, automato = true, bluinven = true,
-                       bluequip = true, quest00 = true, quest01 = true, miss00 = true, faqsub = true, cmbhlst = true }
+local MENU_HIDE_GROUP_DEFS = {
+    {
+        key = 'logs',
+        label = 'Log / Chat',
+        hint = 'Full log window.',
+        ids = { 'fulllog' },
+    },
+    {
+        key = 'equipment',
+        label = 'Equipment / Inventory',
+        hint = 'Equip, inventory, item use and sorting.',
+        ids = { 'equip', 'inventor', 'mnstorag', 'iuse', 'itmsortw', 'sortyn', 'itemctrl' },
+    },
+    {
+        key = 'map',
+        label = 'Map / Scan',
+        hint = 'Map and related windows.',
+        ids = { 'map0', 'maplist', 'mapframe', 'scanlist', 'cnqframe' },
+    },
+    {
+        key = 'config',
+        label = 'Config / Filters',
+        hint = 'Game config and filter windows.',
+        ids = {
+            'conf2win', 'cfilter', 'textcol1', 'confyn', 'conf5m', 'conf5win', 'conf5w1', 'conf5w2',
+            'conf11m', 'conf11l', 'conf11s', 'conf3win', 'conf6win', 'conf12wi', 'conf13wi', 'fxfilter',
+            'conf7', 'conf4',
+        },
+    },
+    {
+        key = 'linkshell',
+        label = 'Linkshell',
+        hint = 'Linkshell windows.',
+        ids = { 'link5', 'link12', 'link13', 'link3' },
+    },
+    {
+        key = 'event_panels',
+        label = 'Event Panels',
+        hint = 'Event result / entry panels.',
+        ids = { 'scresult', 'evitem', 'statcom2' },
+    },
+    {
+        key = 'auction_delivery',
+        label = 'Auction / Delivery / Bank',
+        hint = 'AH, post, delivery, bank and money windows.',
+        ids = {
+            'auc1', 'moneyctr', 'shopsell', 'comyn', 'auclist', 'auchisto', 'auc4', 'post1', 'post2', 'stringdl',
+            'delivery', 'mcr1edlo', 'mcr2edlo', 'mcrbedit', 'mcresed', 'bank', 'handover',
+        },
+    },
+    {
+        key = 'treasure_pool',
+        label = 'Treasure Pool',
+        hint = 'Treasure lot/pass windows.',
+        ids = { 'loot', 'lootope' },
+    },
+    {
+        key = 'merits',
+        label = 'Merits',
+        hint = 'Merit category and merit menus.',
+        ids = { 'meritcat', 'merit1', 'merit2', 'merit3', 'merityn' },
+    },
+    {
+        key = 'shop_job_menus',
+        label = 'Shop / Job Menus',
+        hint = 'Shop, automaton and blue-mage menus.',
+        ids = { 'shop', 'automato', 'bluinven', 'bluequip' },
+    },
+    {
+        key = 'quests_missions',
+        label = 'Quest / Mission / Help',
+        hint = 'Quest, mission and help windows.',
+        ids = { 'quest00', 'quest01', 'miss00', 'faqsub', 'cmbhlst' },
+    },
+}
 
-local function is_hiding_menu_active()
+local MENU_HIDE_GROUP_BY_ID = {}
+for _, group in ipairs(MENU_HIDE_GROUP_DEFS) do
+    for _, id in ipairs(group.ids or {}) do
+        MENU_HIDE_GROUP_BY_ID[id] = group.key
+    end
+end
+
+local function default_menu_hide_groups()
+    local out = {}
+    for _, group in ipairs(MENU_HIDE_GROUP_DEFS) do
+        out[group.key] = true
+    end
+    return out
+end
+
+local function ensure_menu_hide_cfg(cfg)
+    if type(cfg) ~= 'table' then
+        return false
+    end
+
+    local changed = false
+    cfg.menu_hide = cfg.menu_hide or {}
+    local mh = cfg.menu_hide
+
+    if mh.hide_when_ui_hidden == nil then
+        mh.hide_when_ui_hidden = true
+        changed = true
+    else
+        mh.hide_when_ui_hidden = (mh.hide_when_ui_hidden == true)
+    end
+
+    if mh.hide_when_game_menu == nil then
+        mh.hide_when_game_menu = true
+        changed = true
+    else
+        mh.hide_when_game_menu = (mh.hide_when_game_menu == true)
+    end
+
+    if type(mh.groups) ~= 'table' then
+        mh.groups = {}
+        changed = true
+    end
+    for _, group in ipairs(MENU_HIDE_GROUP_DEFS) do
+        if mh.groups[group.key] == nil then
+            mh.groups[group.key] = true
+            changed = true
+        else
+            mh.groups[group.key] = (mh.groups[group.key] == true)
+        end
+    end
+
+    -- Runtime metadata for UI; excluded from serialization by _dump_cfg.
+    cfg._menu_hide_group_defs = MENU_HIDE_GROUP_DEFS
+    return changed
+end
+
+local function get_active_game_menu_id()
     local addr = ashita.memory.find('FFXiMain.dll', 0,
             '8B480C85C974??8B510885D274??3B05', 16, 0)
     if addr == 0 then
-        return false
+        return ''
     end
 
     local ptr = ashita.memory.read_uint32(addr)
     if ptr == 0 then
-        return false
+        return ''
     end
     ptr = ashita.memory.read_uint32(ptr)
     if ptr == 0 then
-        return false
+        return ''
     end
 
     local header = ashita.memory.read_uint32(ptr + 4)
     if header == 0 then
-        return false
+        return ''
     end
 
     local raw = ashita.memory.read_string(header + 0x46, 16)
     if not raw then
-        return false
+        return ''
     end
 
     local cleaned = raw:gsub('\0', '')
@@ -298,7 +435,33 @@ local function is_hiding_menu_active()
     end
     cleaned = cleaned:gsub(' ', '')
 
-    return hidden_menus[cleaned] == true
+    return cleaned
+end
+
+local function is_hiding_menu_active(cfg)
+    local mh = (type(cfg) == 'table' and type(cfg.menu_hide) == 'table') and cfg.menu_hide or nil
+    if mh and mh.hide_when_game_menu == false then
+        return false
+    end
+
+    local menu_id = get_active_game_menu_id()
+    if menu_id == '' then
+        return false
+    end
+
+    local group_key = MENU_HIDE_GROUP_BY_ID[menu_id]
+    if not group_key then
+        return false
+    end
+
+    local groups = mh and mh.groups
+    if type(groups) ~= 'table' then
+        return true
+    end
+    if groups[group_key] == nil then
+        return true
+    end
+    return (groups[group_key] == true)
 end
 
 local function in_world()
@@ -313,6 +476,11 @@ end
 ------------------------------------------------------------------ default cfg
 local DEFAULT_CONFIG = {
     visible = true, theme = 'Default', alpha = 0.90, timeout = 30,
+    menu_hide = {
+        hide_when_ui_hidden = true,
+        hide_when_game_menu = true,
+        groups = default_menu_hide_groups(),
+    },
     colors = {
         QTY = { 1, 1, 1, 1 }, CUR = { 0.1725, 1, 0.0431, 1 },
         ITEM = { 0, 1, 0.9961, 1 }, HUNDO = { 1, 0.84, 0, 1 },
@@ -324,7 +492,7 @@ local DEFAULT_CONFIG = {
         NAME = { 0.55, 0.78, 1, 1 }, LOST = { 1, 0.35, 0.35, 1 },
     },
     colors_limbus = {
-        QTY = { 1, 1, 1, 1 }, CUR = { 1, 0.84, 0, 1 },
+        QTY = { 1, 1, 1, 1 }, CUR = { 1.0, 0.839215686, 0.0, 1.0 }, -- #FFD600
         ITEM = { 0, 1, 0.9961, 1 }, HUNDO = { 1, 0.84, 0, 1 },
         NAME = { 0.55, 0.78, 1, 1 }, LOST = { 1, 0.35, 0.35, 1 },
     },
@@ -342,6 +510,16 @@ local DEFAULT_CONFIG = {
         metal = { 0.62, 0.66, 0.72, 1.0 },
         niveous = { 0.93, 0.96, 1.00, 1.0 },
         crepuscular = { 0.60, 0.54, 0.68, 1.0 },
+    },
+    limbus_hp_bar_colors = {
+        high = { 0.88, 0.47, 0.53, 0.96 },
+        low = { 0.62, 0.12, 0.16, 0.96 },
+    },
+    limbus_icon_anim = {
+        transition_pulse = true,
+        vortex_open_spin = true,
+        vortex_open_pulse = true,
+        vortex_open_spin_speed = 1.8,
     },
     visual_colors = {
         HUD_TEXT = { 0.84, 0.87, 0.91, 1.00 },
@@ -378,7 +556,7 @@ local DEFAULT_CONFIG = {
         idle_border = { 0.35, 0.33, 0.28, 0.72 },
         idle_text = { 0.78, 0.78, 0.78, 1.00 },
     },
-    limbus_icon_size = 30.0,
+    limbus_icon_size = 28.0,
     layout = {
         full = {
             window = { x = 536, y = 129, w = 605, h = 314 },
@@ -445,6 +623,7 @@ local function ensure_settings()
         cfg = loaded
     end
 
+    ensure_menu_hide_cfg(cfg)
     cfg.player_name = pname
     cfg._config_file = cfg_file
     cfg.default_mode = cfg.default_mode or 'compact'
@@ -864,6 +1043,15 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         lastPool = now_tick
     end
 
+    -- Event runtime hooks (per-frame/lightweight polling).
+    if session and session.is_event then
+        local ev_id = session_event_id(session)
+        local handler = event_router.get(ev_id)
+        if handler and handler.on_tick then
+            handler.on_tick(session, now_tick)
+        end
+    end
+
     -- While still inside Limbus zone, finalize the run once timer ended and pool is done.
     if session and session.is_event and session_event_id(session) == 'limbus' then
         if session.limbus_run_started == true and session.limbus_run_ended == true then
@@ -880,7 +1068,10 @@ ashita.events.register('d3d_present', 'treasure_present', function()
     end
 
     process_party_chat_queue()
-    local hide = is_ui_fully_hidden() or is_hiding_menu_active()
+    ensure_menu_hide_cfg(cfg)
+    local hide_ui = (cfg.menu_hide.hide_when_ui_hidden ~= false) and is_ui_fully_hidden()
+    local hide_menu = is_hiding_menu_active(cfg)
+    local hide = hide_ui or hide_menu
     if cfg.visible and not hide then
         ui.render(draw_session, cfg)
     end

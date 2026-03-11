@@ -17,8 +17,20 @@ local KEY_ITEMS = {
 local cached_ki_ids = {}
 
 local function is_coin_name(name)
-    local s = tostring(name or ''):lower()
-    return s:find('beastcoin', 1, true) ~= nil
+    local s = tostring(name or '')
+            :gsub('%c', '')
+            :lower()
+            :gsub('%s+', ' ')
+            :gsub('^%s+', '')
+            :gsub('%s+$', '')
+    if s == '' then
+        return false
+    end
+    return (s == 'ancient beastcoin')
+            or (s == 'anc. beastcoin')
+            or (s == 'anc beastcoin')
+            or (s == 'anct. beastcoin')
+            or (s == 'anct beastcoin')
 end
 
 local function limbus_item_color(item_name, C, chip_color_for_item)
@@ -119,6 +131,92 @@ local function limbus_door_label(sess)
     return 'Door'
 end
 
+local function limbus_floor_cap(sess)
+    local n = tonumber(sess and sess.limbus_max_floor)
+    if not n or n < 1 then
+        return nil
+    end
+    return math.floor(n)
+end
+
+local function limbus_chip_name(sess)
+    local s = tostring(sess and sess.limbus_reward_chip or '')
+    if s == '' then
+        return nil
+    end
+    return s
+end
+
+local function limbus_is_chip_phase(sess)
+    if not sess then
+        return false
+    end
+    local cap = limbus_floor_cap(sess)
+    local chip = limbus_chip_name(sess)
+    local floor = math.max(1, tonumber(sess.limbus_floor) or 1)
+    return (cap ~= nil and chip ~= nil and floor >= cap)
+end
+
+local ELEMENT_LABELS = {
+    fire = 'Fire',
+    ice = 'Ice',
+    wind = 'Wind',
+    earth = 'Earth',
+    thunder = 'Thunder',
+    water = 'Water',
+    light = 'Light',
+    dark = 'Dark',
+}
+
+local function limbus_sw_element_key(sess)
+    if tostring(sess and sess.limbus_path_id or '') ~= 'apollyon_south_west' then
+        return nil
+    end
+    local k = tostring(sess and sess.limbus_sw_day_element or ''):lower()
+    if k == '' then
+        return nil
+    end
+    if k == 'lightning' then
+        k = 'thunder'
+    end
+    if ELEMENT_LABELS[k] then
+        return k
+    end
+    return nil
+end
+
+local function limbus_sw_element_label(sess)
+    local key = limbus_sw_element_key(sess)
+    if not key then
+        return nil
+    end
+    return ELEMENT_LABELS[key]
+end
+
+local function limbus_gunpod_status(sess)
+    local gp = sess and sess.limbus_gunpod
+    local max_spawns = math.max(1, tonumber(gp and gp.max_spawns) or 5)
+    local total_spawns = math.max(0, tonumber(gp and gp.total_spawns) or 0)
+    if total_spawns > max_spawns then
+        max_spawns = total_spawns
+    end
+    local active_count = math.max(0, tonumber(gp and gp.active_count) or 0)
+    local active_hp = tonumber(gp and gp.active_hp) or nil
+    if active_hp then
+        if active_hp < 0 then
+            active_hp = 0
+        elseif active_hp > 100 then
+            active_hp = 100
+        end
+    end
+    return {
+        max_spawns = max_spawns,
+        total_spawns = total_spawns,
+        active_count = active_count,
+        active_hp = active_hp,
+    }
+end
+
 local function collect_player_names(sess, keys, is_valid_player_name)
     local out = {}
     for _, p in ipairs(keys(sess and sess.drops and sess.drops.by_player or {})) do
@@ -129,15 +227,18 @@ local function collect_player_names(sess, keys, is_valid_player_name)
     return out
 end
 
-local function aggregate_items(sess, keys, want_coin)
+local function aggregate_items(sess, keys, want_coin, item_ok)
     local acc = {}
     local by_player = sess and sess.drops and sess.drops.by_player or {}
+    local allow = item_ok or function()
+        return true
+    end
     for _, pl in ipairs(keys(by_player)) do
         local bag = by_player[pl] or {}
         for _, it in ipairs(keys(bag)) do
             local qty = tonumber(bag[it]) or 0
             local is_coin = is_coin_name(it)
-            if qty > 0 and ((want_coin and is_coin) or ((not want_coin) and (not is_coin))) then
+            if qty > 0 and allow(it) and ((want_coin and is_coin) or ((not want_coin) and (not is_coin))) then
                 acc[it] = (acc[it] or 0) + qty
             end
         end
@@ -145,13 +246,16 @@ local function aggregate_items(sess, keys, want_coin)
     return acc
 end
 
-local function aggregate_lost(sess, keys, lost_name, want_coin)
+local function aggregate_lost(sess, keys, lost_name, want_coin, item_ok)
+    local allow = item_ok or function()
+        return true
+    end
     local lost = sess and sess.drops and sess.drops.lost_total
     if type(lost) == 'table' then
         local out = {}
         for _, it in ipairs(keys(lost)) do
             local is_coin = is_coin_name(it)
-            if (want_coin and is_coin) or ((not want_coin) and (not is_coin)) then
+            if allow(it) and ((want_coin and is_coin) or ((not want_coin) and (not is_coin))) then
                 out[it] = tonumber(lost[it]) or 0
             end
         end
@@ -162,7 +266,7 @@ local function aggregate_lost(sess, keys, lost_name, want_coin)
     for _, ln in ipairs((sess and sess.drops and sess.drops.lost) or {}) do
         local it = lost_name(ln)
         local is_coin = is_coin_name(it)
-        if (want_coin and is_coin) or ((not want_coin) and (not is_coin)) then
+        if allow(it) and ((want_coin and is_coin) or ((not want_coin) and (not is_coin))) then
             out[it] = (out[it] or 0) + 1
         end
     end
@@ -248,11 +352,20 @@ function ui_limbus.top_left_status(ctx)
         return nil
     end
     local t = limbus_time_left_text(sess)
-    local ready = limbus_gate_state(sess)
     local floor = limbus_floor_state(sess)
-    local floor_txt = 'F' .. tostring(floor)
-    local door_label = limbus_door_label(sess)
-    local tail = floor_txt .. ' | ' .. door_label .. ':' .. (ready and 'OPEN' or 'CLOSED')
+    local floor_txt = 'Floor ' .. tostring(floor)
+    local tail = nil
+
+    if limbus_is_chip_phase(sess) then
+        local chip = limbus_chip_name(sess) or 'Chip'
+        tail = floor_txt .. ' | ' .. chip
+    elseif tostring(sess and sess.limbus_path_id or '') == 'apollyon_central' then
+        local gp = limbus_gunpod_status(sess)
+        tail = 'Gunpod ' .. tostring(gp.total_spawns) .. '/' .. tostring(gp.max_spawns)
+    else
+        local door_label = limbus_door_label(sess)
+        tail = floor_txt .. ' | ' .. door_label
+    end
 
     if t and t ~= '' then
         return t .. ' | ' .. tail
@@ -266,6 +379,10 @@ function ui_limbus.render(ctx)
     local sess = ctx.sess
     local cfg = ctx.cfg
     local C = ctx.C
+    local get_event_loot_colors = ctx.event_loot_colors
+    if type(get_event_loot_colors) == 'function' then
+        C = get_event_loot_colors('limbus') or C
+    end
     local V = ctx.V or {}
     local TF_BORDER = ctx.TF_BORDER
     local keys = ctx.keys
@@ -275,10 +392,23 @@ function ui_limbus.render(ctx)
     local fmt_n = ctx.fmt_n
     local store = ctx.store
     local chip_color_for_item = ctx.chip_color_for_item
-    local draw_gate_icon = ctx.draw_gate_icon
+    local draw_styled_hp_progress = ctx.draw_styled_hp_progress
+    local draw_chip_icon = ctx.draw_chip_icon
+    local draw_element_icon = ctx.draw_element_icon
+    local draw_keyitem_status_icon = ctx.draw_keyitem_status_icon
     local draw_treasure_table = ctx.draw_treasure_table
     local draw_settings_panel = ctx.draw_settings_panel
-    local gate_ready, _, gate_opens = limbus_gate_state(sess)
+    local item_matches_event = ctx.item_matches_event or function()
+        return true
+    end
+    local sess_event = tostring((sess and sess.event_id) or ''):lower()
+    local function limbus_item_ok(name)
+        if sess_event == 'limbus' then
+            return true
+        end
+        return item_matches_event(name, 'limbus')
+    end
+    local gate_ready = limbus_gate_state(sess)
     local floor_now, floor_pending = limbus_floor_state(sess)
     local run_started = (sess and sess.is_event and sess.limbus_run_started == true and sess.limbus_run_ended ~= true)
     local door_label = limbus_door_label(sess)
@@ -286,43 +416,92 @@ function ui_limbus.render(ctx)
     local state_alert = V.STATE_ALERT or { 0.95, 0.30, 0.30, 1.0 }
 
     if (not ui.compact) and run_started then
-        local is_transition = (sess and sess.limbus_transition_pending == true) or floor_pending
-        local drew_icon = false
-        if type(draw_gate_icon) == 'function' then
-            local ok_icon, icon_res = pcall(draw_gate_icon, sess, 22)
-            drew_icon = (ok_icon and icon_res == true)
-        end
-        if drew_icon then
+        local chip_phase = limbus_is_chip_phase(sess)
+        local floor_cap = limbus_floor_cap(sess)
+        if tostring(sess and sess.limbus_path_id or '') == 'apollyon_central' then
+            local gp = limbus_gunpod_status(sess)
+            imgui.TextColored(state_ok, 'Gunpod ' .. tostring(gp.total_spawns) .. '/' .. tostring(gp.max_spawns))
+            if gp.active_count > 1 then
+                imgui.SameLine()
+                imgui.TextDisabled('Active: ' .. tostring(gp.active_count))
+            end
+            if gp.active_hp ~= nil then
+                imgui.SameLine()
+                local hp_frac = math.max(0.0, math.min(1.0, (tonumber(gp.active_hp) or 0) / 100.0))
+                if type(draw_styled_hp_progress) == 'function' then
+                    draw_styled_hp_progress(hp_frac, { 170, 14 }, V.HUD_TEXT)
+                else
+                    imgui.ProgressBar(hp_frac, { 170, 14 })
+                    imgui.SameLine()
+                    imgui.TextDisabled(string.format('%d%%%%', math.floor((gp.active_hp or 0) + 0.5)))
+                end
+            else
+                imgui.SameLine()
+                imgui.TextDisabled('No active Gunpod')
+            end
+        elseif chip_phase then
+            local chip_name = limbus_chip_name(sess) or 'Chip'
+            local chip_col = limbus_item_color(chip_name, C, chip_color_for_item)
+            local chip_key = tostring(sess and sess.limbus_reward_chip_key or '')
+            local sw_element_key = limbus_sw_element_key(sess)
+            if chip_key == '' then
+                chip_key = nil
+            end
+            local drew_chip_icon = false
+            local icon_size = math.max(14, math.floor(((tonumber(cfg.limbus_icon_size) or 28) * 0.72) + 0.5))
+            if type(draw_chip_icon) == 'function' then
+                local ok_chip, icon_res = pcall(draw_chip_icon, chip_name, chip_key, icon_size, chip_col)
+                drew_chip_icon = (ok_chip and icon_res == true)
+            end
+            if drew_chip_icon then
+                imgui.SameLine()
+                imgui.TextColored(chip_col, chip_name)
+            else
+                imgui.TextColored(chip_col, '[C] ' .. chip_name)
+            end
+            if sw_element_key ~= nil then
+                imgui.SameLine()
+                if type(draw_element_icon) == 'function' then
+                    pcall(draw_element_icon, sw_element_key, icon_size, { 1, 1, 1, 1 })
+                end
+            end
             imgui.SameLine()
-        end
-        if is_transition then
-            imgui.TextDisabled(door_label .. ' TRANSITION')
-        elseif gate_ready then
-            imgui.TextColored(state_ok, door_label .. ' OPEN - You can go up now.')
+            if floor_cap and floor_cap > 0 then
+                imgui.TextDisabled('Floor: ' .. tostring(floor_now) .. '/' .. tostring(floor_cap))
+            else
+                imgui.TextDisabled('Floor: ' .. tostring(floor_now))
+            end
         else
-            imgui.TextColored(state_alert, door_label .. ' CLOSED')
-        end
-        if gate_opens > 0 then
+            local is_transition = (sess and sess.limbus_transition_pending == true) or floor_pending
+            if is_transition then
+                imgui.TextDisabled(door_label .. ' TRANSITION')
+            elseif gate_ready then
+                imgui.TextColored(state_ok, door_label .. ' OPEN - You can go up now.')
+            else
+                imgui.TextColored(state_alert, door_label .. ' CLOSED')
+            end
             imgui.SameLine()
-            imgui.TextDisabled('Opens: ' .. tostring(gate_opens))
+            if floor_cap and floor_cap > 0 then
+                imgui.TextDisabled('Floor: ' .. tostring(floor_now) .. '/' .. tostring(floor_cap) .. (floor_pending and ' (transitioning...)' or ''))
+            else
+                imgui.TextDisabled('Floor: ' .. tostring(floor_now) .. (floor_pending and ' (transitioning...)' or ''))
+            end
         end
-        imgui.SameLine()
-        imgui.TextDisabled('Floor: ' .. tostring(floor_now) .. (floor_pending and ' (transitioning...)' or ''))
         imgui.Separator()
     end
 
     if imgui.BeginTabBar('##edtabs') then
         if ui.compact then
             if imgui.BeginTabItem('Treasure') then
-                draw_treasure_table(sess, C, cfg)
+                draw_treasure_table(sess, C, cfg, 'limbus')
                 imgui.EndTabItem()
             end
         else
             if imgui.BeginTabItem('All') then
-                local totals_coin = aggregate_items(sess, keys, true)
-                local totals_item = aggregate_items(sess, keys, false)
-                local lost_coin = aggregate_lost(sess, keys, lost_name, true)
-                local lost_item = aggregate_lost(sess, keys, lost_name, false)
+                local totals_coin = aggregate_items(sess, keys, true, limbus_item_ok)
+                local totals_item = aggregate_items(sess, keys, false, limbus_item_ok)
+                local lost_coin = aggregate_lost(sess, keys, lost_name, true, limbus_item_ok)
+                local lost_item = aggregate_lost(sess, keys, lost_name, false, limbus_item_ok)
 
                 local acc = {}
                 local function merge_into(map, field)
@@ -380,8 +559,8 @@ function ui_limbus.render(ctx)
             end
 
             if imgui.BeginTabItem('Coins') then
-                local totals = aggregate_items(sess, keys, true)
-                local lost = aggregate_lost(sess, keys, lost_name, true)
+                local totals = aggregate_items(sess, keys, true, limbus_item_ok)
+                local lost = aggregate_lost(sess, keys, lost_name, true, limbus_item_ok)
 
                 if imgui.BeginTable('tbl_limbus_coins', 4, TF_BORDER) then
                     imgui.TableSetupColumn('Coin')
@@ -431,8 +610,8 @@ function ui_limbus.render(ctx)
             end
 
             if imgui.BeginTabItem('Items') then
-                local totals = aggregate_items(sess, keys, false)
-                local lost = aggregate_lost(sess, keys, lost_name, false)
+                local totals = aggregate_items(sess, keys, false, limbus_item_ok)
+                local lost = aggregate_lost(sess, keys, lost_name, false, limbus_item_ok)
 
                 if imgui.BeginTable('tbl_limbus_items', 4, TF_BORDER) then
                     imgui.TableSetupColumn('Item')
@@ -482,7 +661,23 @@ function ui_limbus.render(ctx)
             end
 
             if imgui.BeginTabItem('Players') then
-                local plist = collect_player_names(sess, keys, is_valid_player_name)
+                local plist = {}
+                do
+                    local by_player = sess and sess.drops and sess.drops.by_player or {}
+                    for _, p in ipairs(collect_player_names(sess, keys, is_valid_player_name)) do
+                        local bag = by_player[p] or {}
+                        local include = false
+                        for _, it in ipairs(keys(bag)) do
+                            if limbus_item_ok(it) and (tonumber(bag[it]) or 0) > 0 then
+                                include = true
+                                break
+                            end
+                        end
+                        if include then
+                            plist[#plist + 1] = p
+                        end
+                    end
+                end
 
                 local vv = { ui.players_currency_only == true }
                 if imgui.Checkbox('Coins only', vv) then
@@ -510,6 +705,9 @@ function ui_limbus.render(ctx)
                 local by_player = sess and sess.drops and sess.drops.by_player or {}
 
                 local function show_item(it)
+                    if not limbus_item_ok(it) then
+                        return false
+                    end
                     if not ui.players_currency_only then
                         return true
                     end
@@ -598,10 +796,17 @@ function ui_limbus.render(ctx)
                         imgui.TableSetColumnIndex(0)
                         imgui.TextColored(C.ITEM, ki.label)
                         imgui.TableSetColumnIndex(1)
-                        if have == true then
-                            imgui.TextColored(state_ok, 'OK')
-                        else
-                            imgui.TextColored(state_alert, 'Missing')
+                        local drew_status_icon = false
+                        if type(draw_keyitem_status_icon) == 'function' then
+                            local ok_icon, icon_res = pcall(draw_keyitem_status_icon, have == true, 28)
+                            drew_status_icon = (ok_icon and icon_res == true)
+                        end
+                        if not drew_status_icon then
+                            if have == true then
+                                imgui.TextColored(state_ok, '[v]')
+                            else
+                                imgui.TextColored(state_alert, '[X]')
+                            end
                         end
                     end
 
@@ -611,7 +816,7 @@ function ui_limbus.render(ctx)
             end
 
             if imgui.BeginTabItem('Treasure') then
-                draw_treasure_table(sess, C, cfg)
+                draw_treasure_table(sess, C, cfg, 'limbus')
                 imgui.EndTabItem()
             end
 
@@ -711,7 +916,7 @@ function ui_limbus.render(ctx)
 
                         imgui.Separator()
 
-                        local totals = aggregate_items(sess, keys, true)
+                        local totals = aggregate_items(sess, keys, true, limbus_item_ok)
                         local coin_names = keys(totals)
                         local included = {}
                         for _, pl in ipairs(plist) do

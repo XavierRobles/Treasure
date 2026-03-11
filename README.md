@@ -46,6 +46,25 @@
 - Event Buttons reset now affects only the current event settings.
 - Fixed session-history scrolling so the list no longer jumps back to the top while browsing.
 - Fixed full-view mouse-wheel scrolling so content keeps scrolling smoothly with a fixed **Back / X** header.
+- Added Apollyon route profiles (**West / East / South West / South East / Central**) with floor caps per route and final objective tracking.
+- Added Central Apollyon **Gunpod** tracking with live spawn count and active add HP status.
+- Gunpod spawn detection now uses boss message parsing (**Pod Ejection**) plus entity fallback, with anti-duplicate protection.
+- Gunpod cap is now dynamic, so if an extra add appears the tracker expands automatically (for example **6/6**).
+- Added Gunpod HP percent display and configurable HP bar colors in Limbus settings.
+- Improved compact auto-resize when the active Limbus header appears/disappears, keeping all content visible.
+- Added boss-drop tooltips in Limbus live pool for Omega/Ultima items, showing the exact Homam/Nashira piece.
+- Added icon support inside Limbus tooltips (job icons for AF items and gear icons for Omega/Ultima drops).
+- Reorganized the icon library into a cleaner, scalable structure (`chips` and `elementals`) while preserving backward compatibility.
+- Improved event separation: each event tab now shows only its own drops across Treasure, All, Coins, Items, Players, Lost, and Management.
+- When opening the opposite event while inside another zone, the selected tab stays clean (no mixed drops).
+- Back behavior improved: returning from full to compact now follows the active zone event again.
+- Added new Global auto-hide settings so users can choose when Treasure hides:
+  - Hide when game UI is hidden.
+  - Hide on selected game menu groups (with per-group checkboxes).
+- Refined currency classification so **Ancient Beastcoin** stays in Limbus currency, while **Gold Beastcoin** is treated as a regular item in Dynamis.
+- Improved opposite-event behavior: while inside Dynamis/Limbus, your own event keeps showing the real live pool, and the opposite event stays clean.
+- Reinforced event color isolation so each event always uses its own configured loot colors.
+- Tightened Limbus coin detection to only Ancient Beastcoin variants (**Ancient / Anc. / Anct.**).
 
 ### v1.0.7 (Español)
 
@@ -73,6 +92,25 @@
 - El reset de Event Buttons ahora solo afecta a los ajustes del evento activo.
 - Corregido el scroll del historial para que no vuelva arriba mientras recorres la lista.
 - Corregido el scroll con rueda en vista full para que el contenido baje fluido y la cabecera **Back / X** quede fija.
+- Añadidos perfiles de ruta de Apollyon (**West / East / South West / South East / Central**) con tope de pisos por ruta y objetivo final.
+- Añadido seguimiento de **Gunpod** en Central Apollyon con contador de apariciones en vivo y estado de vida del add activo.
+- La detección de aparición de Gunpod ahora usa mensaje del boss (**Pod Ejection**) más fallback por entidad, con protección anti-duplicado.
+- El límite de Gunpod ahora es dinámico: si aparece un add extra, el contador se amplía automáticamente (por ejemplo **6/6**).
+- Añadido porcentaje de vida en Gunpod y ajuste de colores de su barra en Settings de Limbus.
+- Mejorado el autoajuste en compacto cuando aparece/desaparece la cabecera activa de Limbus para que no se corte el contenido.
+- Añadidos tooltips de boss en el pool vivo de Limbus para drops de Omega/Ultima, mostrando la pieza exacta de Homam/Nashira.
+- Añadido soporte de iconos dentro de los tooltips de Limbus (icono de job para AF e icono de equipo para drops de Omega/Ultima).
+- Reestructurada la libreria de iconos con una estructura mas limpia y escalable (`chips` y `elementals`), manteniendo compatibilidad con versiones anteriores.
+- Mejorada la separación por evento: cada pestaña ahora muestra solo drops de su propio evento en Treasure, All, Coins, Items, Players, Lost y Management.
+- Al abrir el evento contrario dentro de otra zona, la vista se mantiene limpia y sin mezclar drops.
+- Mejorado el comportamiento de Back: al volver de full a compacto, se recupera de nuevo el evento activo de la zona.
+- Añadidas nuevas opciones globales de auto-ocultación para que el usuario decida cuándo esconder Treasure:
+  - Ocultar cuando la UI del juego esta oculta.
+  - Ocultar en grupos de menus seleccionados (con check por grupo).
+- Ajustada la clasificacion de moneda para que **Ancient Beastcoin** siga como currency de Limbus y **Gold Beastcoin** se trate como item normal en Dynamis.
+- Mejorado el comportamiento con evento opuesto: estando dentro de Dynamis/Limbus, tu propio evento sigue mostrando el pool real en vivo y el evento contrario queda limpio.
+- Reforzada la separación de colores por evento para que cada uno use siempre sus ajustes propios.
+- Ajustada la detección de moneda en Limbus para contar solo variantes de Ancient Beastcoin (**Ancient / Anc. / Anct.**).
 
 ---
 ### v1.0.6 (English)

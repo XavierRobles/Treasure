@@ -55,6 +55,12 @@ local COL_TAB_UNFOCUSED_ACTIVE = (ImGuiCol and ImGuiCol.TabUnfocusedActive)
 local COL_SEPARATOR = (ImGuiCol and ImGuiCol.Separator)
         or rawget(imgui, 'Col_Separator')
         or rawget(_G, 'ImGuiCol_Separator')
+local COL_PLOT_HISTOGRAM = (ImGuiCol and ImGuiCol.PlotHistogram)
+        or rawget(imgui, 'Col_PlotHistogram')
+        or rawget(_G, 'ImGuiCol_PlotHistogram')
+local COL_PLOT_HISTOGRAM_HOVERED = (ImGuiCol and ImGuiCol.PlotHistogramHovered)
+        or rawget(imgui, 'Col_PlotHistogramHovered')
+        or rawget(_G, 'ImGuiCol_PlotHistogramHovered')
 
 local SV_FRAME_ROUNDING = rawget(_G, 'ImGuiStyleVar_FrameRounding')
         or rawget(imgui, 'ImGuiStyleVar_FrameRounding')
@@ -78,19 +84,21 @@ local SV_TAB_ROUNDING = rawget(_G, 'ImGuiStyleVar_TabRounding')
 
 local GATE_ICONS = {
     loaded = false,
-    gate = nil,
     gate_open = nil,
     gate_closed = nil,
     vortex = nil,
     vortex_open = nil,
     vortex_closed = nil,
     transition = nil,
-    open = nil,
-    closed = nil,
+    ultima = nil,
+    status_ok = nil,
+    status_x = nil,
+    chips = {},
+    elementals = {},
+    jobs = {},
+    equip = {},
 }
 local ICON_TINT_WHITE = { 1.0, 1.0, 1.0, 1.0 }
-local GATE_TINT_OPEN = { 0.20, 1.0, 0.30, 1.0 }     -- verde
-local GATE_TINT_CLOSED = { 1.0, 0.38, 0.38, 1.0 }   -- rojo
 
 -- libs ----------------------------------------------------------
 local SETTINGS_OK, settings = pcall(require, 'settings')   -- settings.lua
@@ -369,7 +377,7 @@ local DEFAULT_COLORS_DYNAMIS = {
 local DEFAULT_COLORS_LIMBUS = {
     NAME = { 0.55, 0.78, 1.00, 1 },
     ITEM = { 0, 1, 0.9961, 1 },
-    CUR = { 1, 0.84, 0, 1 },
+    CUR = { 1.0, 0.839215686, 0.0, 1.0 }, -- #FFD600
     HUNDO = { 1, 0.84, 0, 1 },
     QTY = { 1, 1, 1, 1 },
     LOST = { 1, 0.35, 0.35, 1 },
@@ -392,6 +400,20 @@ local DEFAULT_CHIP_COLORS = {
     metal = { 0.62, 0.66, 0.72, 1.0 },
     niveous = { 0.93, 0.96, 1.00, 1.0 },
     crepuscular = { 0.60, 0.54, 0.68, 1.0 },
+}
+
+local DEFAULT_LIMBUS_HP_BAR_COLORS = {
+    -- High HP base (darker rose).
+    high = { 0.88, 0.47, 0.53, 0.96 },
+    -- Low HP base (deep red).
+    low = { 0.62, 0.12, 0.16, 0.96 },
+}
+
+local DEFAULT_LIMBUS_ICON_ANIM = {
+    transition_pulse = true,
+    vortex_open_spin = true,
+    vortex_open_pulse = true,
+    vortex_open_spin_speed = 1.8,
 }
 
 local CHIP_COLOR_KEYS = {
@@ -560,6 +582,123 @@ local function mix_rgba(a, b, t)
     return out
 end
 
+local function hp_fill_rgba(frac, cfg)
+    local f = tonumber(frac) or 0
+    if f < 0 then
+        f = 0
+    elseif f > 1 then
+        f = 1
+    end
+    local hp_cfg = cfg and cfg.limbus_hp_bar_colors
+    local high = sanitize_rgba(hp_cfg and hp_cfg.high, DEFAULT_LIMBUS_HP_BAR_COLORS.high)
+    local low = sanitize_rgba(hp_cfg and hp_cfg.low, DEFAULT_LIMBUS_HP_BAR_COLORS.low)
+    return {
+        low[1] + ((high[1] - low[1]) * f),
+        low[2] + ((high[2] - low[2]) * f),
+        low[3] + ((high[3] - low[3]) * f),
+        low[4] + ((high[4] - low[4]) * f),
+    }
+end
+
+local function draw_styled_hp_progress(frac, size, text_col, cfg)
+    local f = tonumber(frac) or 0
+    if f < 0 then
+        f = 0
+    elseif f > 1 then
+        f = 1
+    end
+
+    local w = tonumber(size and size[1]) or 120
+    local h = tonumber(size and size[2]) or 14
+    if w < 16 then
+        w = 16
+    end
+    if h < 8 then
+        h = 8
+    end
+
+    local sx, sy = imgui.GetCursorPos()
+    if type(sx) ~= 'number' then
+        sx, sy = _get_xy(sx)
+    end
+    sx = tonumber(sx) or 0
+    sy = tonumber(sy) or 0
+
+    local pushed_colors = 0
+    local pushed_vars = 0
+
+    local fill = hp_fill_rgba(f, cfg)
+    local bg = { 0.10, 0.12, 0.15, 0.92 }
+    local hov = tint_rgba(fill, 1.06, 0.00)
+    local border = mix_rgba(fill, bg, 0.35)
+    border[4] = 0.95
+
+    if COL_FRAME_BG ~= nil then
+        imgui.PushStyleColor(COL_FRAME_BG, bg)
+        pushed_colors = pushed_colors + 1
+    end
+    if COL_PLOT_HISTOGRAM ~= nil then
+        imgui.PushStyleColor(COL_PLOT_HISTOGRAM, fill)
+        pushed_colors = pushed_colors + 1
+    end
+    if COL_PLOT_HISTOGRAM_HOVERED ~= nil then
+        imgui.PushStyleColor(COL_PLOT_HISTOGRAM_HOVERED, hov)
+        pushed_colors = pushed_colors + 1
+    end
+    if COL_BORDER ~= nil then
+        imgui.PushStyleColor(COL_BORDER, border)
+        pushed_colors = pushed_colors + 1
+    end
+    if COL_TEXT ~= nil then
+        -- Hide built-in progress text; we'll draw centered text ourselves.
+        imgui.PushStyleColor(COL_TEXT, { 0, 0, 0, 0 })
+        pushed_colors = pushed_colors + 1
+    end
+    if SV_FRAME_ROUNDING ~= nil then
+        imgui.PushStyleVar(SV_FRAME_ROUNDING, math.max(4.0, h * 0.5))
+        pushed_vars = pushed_vars + 1
+    end
+    if SV_FRAME_BORDER_SIZE ~= nil then
+        imgui.PushStyleVar(SV_FRAME_BORDER_SIZE, 1.15)
+        pushed_vars = pushed_vars + 1
+    end
+
+    local ok_hide = pcall(imgui.ProgressBar, f, { w, h }, '')
+    if not ok_hide then
+        imgui.ProgressBar(f, { w, h })
+    end
+
+    local ex, ey = imgui.GetCursorPos()
+    if type(ex) ~= 'number' then
+        ex, ey = _get_xy(ex)
+    end
+    ex = tonumber(ex) or (sx + w)
+    ey = tonumber(ey) or sy
+
+    if pushed_vars > 0 then
+        imgui.PopStyleVar(pushed_vars)
+    end
+    if pushed_colors > 0 then
+        imgui.PopStyleColor(pushed_colors)
+    end
+
+    local pct = string.format('%d%%', math.floor((f * 100) + 0.5))
+    local pct_text = pct:gsub('%%', '%%%%')
+    local tw, th = imgui.CalcTextSize(pct)
+    if type(tw) ~= 'number' then
+        tw, th = _get_xy(tw)
+    end
+    tw = tonumber(tw) or 0
+    th = tonumber(th) or (tonumber(imgui.GetTextLineHeight()) or h)
+    local tx = sx + math.max(0, (w - tw) * 0.5)
+    local ty = sy + math.max(0, (h - th) * 0.5)
+    imgui.SetCursorPosX(tx)
+    imgui.SetCursorPosY(ty)
+    imgui.TextColored(text_col or { 0.92, 0.95, 1.00, 1.00 }, pct_text)
+    imgui.SetCursorPosX(ex)
+    imgui.SetCursorPosY(ey)
+end
+
 local function theme_col_rgba(theme_tbl, col_id, fallback)
     local src = theme_tbl and col_id and theme_tbl[col_id]
     if type(src) ~= 'table' then
@@ -676,6 +815,19 @@ local function lost_name(l)
             or s:match('^(.+)%s+is%s+lost%.?$')
     return (it or s):gsub('%s+$', '')
 end
+
+local function is_ancient_beastcoin_name(name)
+    local s = norm(name or '')
+    if s == '' then
+        return false
+    end
+    return (s == 'ancient beastcoin')
+            or (s == 'anc. beastcoin')
+            or (s == 'anc beastcoin')
+            or (s == 'anct. beastcoin')
+            or (s == 'anct beastcoin')
+end
+
 local function is_cur(name)
     local s = norm(name or '')
     return (s:find('bronzepiece') ~= nil)
@@ -683,7 +835,31 @@ local function is_cur(name)
             or (s:find('byne bill') ~= nil)
             or (s:find('silverpiece') ~= nil)
             or (s:find('jadeshell') ~= nil)
-            or (s:find('beastcoin') ~= nil)
+            or is_ancient_beastcoin_name(name)
+end
+
+local function is_dynamis_currency_name(name)
+    local s = norm(name or '')
+    return (s:find('bronzepiece') ~= nil)
+            or (s:find('whiteshell') ~= nil)
+            or (s:find('byne bill') ~= nil)
+            or (s:find('silverpiece') ~= nil)
+            or (s:find('jadeshell') ~= nil)
+end
+
+local function is_limbus_currency_name(name)
+    return is_ancient_beastcoin_name(name)
+end
+
+local function is_event_currency_name(name, event_id)
+    local ev = norm(event_id or '')
+    if ev == 'limbus' then
+        return is_limbus_currency_name(name)
+    end
+    if ev == 'dynamis' then
+        return is_dynamis_currency_name(name)
+    end
+    return is_cur(name)
 end
 
 local CHIP_MATCH_ORDER = {
@@ -692,19 +868,389 @@ local CHIP_MATCH_ORDER = {
     'metal', 'niveous', 'crepuscular',
 }
 
-local function chip_color_for_item(name, cfg)
+local ELEMENT_LABELS = {
+    fire = 'Fire',
+    ice = 'Ice',
+    wind = 'Wind',
+    earth = 'Earth',
+    thunder = 'Thunder',
+    water = 'Water',
+    light = 'Light',
+    dark = 'Dark',
+}
+
+-- Limbus: tooltip data for pool_live item names (jobs / usage).
+-- Only shown when current session is Limbus.
+local LIMBUS_CHIP_HINT_BY_ID = {
+    [1692] = 'Access item.',
+    [1693] = 'Access item.',
+    [1694] = 'Access item.',
+    [1904] = 'Used to enter Central Temenos - 3rd Floor.',
+    [1905] = 'Used to enter Central Temenos - 2nd Floor.',
+    [1906] = 'Used to enter Central Temenos - 1st Floor.',
+    [1907] = 'Used for Proto-Ultima fight.',
+    [1908] = 'Used for Proto-Ultima fight.',
+    [1909] = 'Used for Proto-Omega fight.',
+    [1910] = 'Used for Proto-Omega fight.',
+    [1986] = 'Used for Proto-Ultima fight.',
+    [1987] = 'Used for Proto-Omega fight.',
+    [1988] = 'Used for Proto-Omega fight.',
+    [2127] = 'Access item.',
+    [3854] = 'Access item.',
+    [3855] = 'Access item.',
+}
+
+local LIMBUS_CHIP_HINT_BY_KEY = {
+    ['magenta chip'] = 'Used for Proto-Omega fight.',
+    ['smoky chip'] = 'Used for Proto-Omega fight.',
+    ['smokey chip'] = 'Used for Proto-Omega fight.',
+    ['charcoal chip'] = 'Used for Proto-Omega fight.',
+    ['smalt chip'] = 'Used for Proto-Omega fight.',
+    ['silver chip'] = 'Used for Proto-Ultima fight.',
+    ['orchid chip'] = 'Used for Proto-Ultima fight.',
+    ['cerulean chip'] = 'Used for Proto-Ultima fight.',
+    ['emerald chip'] = 'Used to enter Central Temenos - 1st Floor.',
+    ['scarlet chip'] = 'Used to enter Central Temenos - 2nd Floor.',
+    ['ivory chip'] = 'Used to enter Central Temenos - 3rd Floor.',
+    ['carmine chip'] = 'Access item.',
+    ['cyan chip'] = 'Access item.',
+    ['gray chip'] = 'Access item.',
+    ['metal chip'] = 'Access item.',
+    ['niveous chip'] = 'Access item.',
+    ['crepuscular chip'] = 'Access item.',
+}
+
+local LIMBUS_BOSS_HINT_BY_ID = {
+    [15240] = 'Homam Zucchetto',
+    [14905] = 'Homam Manopolas',
+    [15576] = 'Homam Cosciales',
+    [15661] = 'Homam Gambieras',
+    [14488] = 'Homam Corazza',
+
+    [15241] = 'Nashira Turban',
+    [14906] = 'Nashira Gages',
+    [15577] = 'Nashira Seraweels',
+    [15662] = 'Nashira Crackows',
+    [14489] = 'Nashira Manteel',
+}
+
+local LIMBUS_BOSS_HINT_BY_KEY = {
+    ['omega s eye'] = 'Homam Zucchetto',
+    ['omegas eye'] = 'Homam Zucchetto',
+    ['omega s foreleg'] = 'Homam Manopolas',
+    ['omegas foreleg'] = 'Homam Manopolas',
+    ['omega s hind leg'] = 'Homam Cosciales',
+    ['omegas hind leg'] = 'Homam Cosciales',
+    ['omega s tail'] = 'Homam Gambieras',
+    ['omegas tail'] = 'Homam Gambieras',
+    ['omega s heart'] = 'Homam Corazza',
+    ['omegas heart'] = 'Homam Corazza',
+
+    ['ultima s cerebrum'] = 'Nashira Turban',
+    ['ultimas cerebrum'] = 'Nashira Turban',
+    ['ultima s claw'] = 'Nashira Gages',
+    ['ultimas claw'] = 'Nashira Gages',
+    ['ultima s leg'] = 'Nashira Seraweels',
+    ['ultimas leg'] = 'Nashira Seraweels',
+    ['ultima s tail'] = 'Nashira Crackows',
+    ['ultimas tail'] = 'Nashira Crackows',
+    ['ultima s heart'] = 'Nashira Manteel',
+    ['ultimas heart'] = 'Nashira Manteel',
+
+    ['homam zucchetto'] = 'Homam Zucchetto',
+    ['homam manopolas'] = 'Homam Manopolas',
+    ['homam cosciales'] = 'Homam Cosciales',
+    ['homam gambieras'] = 'Homam Gambieras',
+    ['homam corazza'] = 'Homam Corazza',
+
+    ['nashira turban'] = 'Nashira Turban',
+    ['nashira gages'] = 'Nashira Gages',
+    ['nashira seraweels'] = 'Nashira Seraweels',
+    ['nashira crackows'] = 'Nashira Crackows',
+    ['nashira manteel'] = 'Nashira Manteel',
+}
+
+local LIMBUS_BOSS_EQUIP_ICON_BY_HINT = {
+    ['Homam Zucchetto'] = 'homam_zucchetto',
+    ['Homam Manopolas'] = 'homam_manopolas',
+    ['Homam Cosciales'] = 'homam_cosciales',
+    ['Homam Gambieras'] = 'homam_gambieras',
+    ['Homam Corazza'] = 'homam_corazza',
+    ['Nashira Turban'] = 'nashira_turban',
+    ['Nashira Gages'] = 'nashira_gages',
+    ['Nashira Seraweels'] = 'nashira_seraweels',
+    ['Nashira Crackows'] = 'nashira_crackows',
+    ['Nashira Manteel'] = 'nashira_manteel',
+}
+
+local LIMBUS_AF1_JOB_BY_ITEM_KEY = {
+    ['coiled yarn'] = 'BRD',
+    ['brown doeskin'] = 'BRD',
+    ['smalt leather'] = 'BST',
+    ['fetid lanolin'] = 'BST',
+    ['diabolic silk'] = 'BLM',
+    ['diabolic yarn'] = 'BLM',
+    ['dark orichalcum'] = 'DRK',
+    ['black rivet'] = 'DRK',
+    ['cbl myth sheet'] = 'DRG',
+    ['cbl mythril sheet'] = 'DRG',
+    ['blue rivet'] = 'DRG',
+    ['ut gold thread'] = 'MNK',
+    ['ancient brass'] = 'MNK',
+    ['plaited cord'] = 'NIN',
+    ['ebony lacquer'] = 'NIN',
+    ['snowy cermet'] = 'PLD',
+    ['white rivet'] = 'PLD',
+    ['chameleon yarn'] = 'RNG',
+    ['charcoal cotton'] = 'RNG',
+    ['ruby silk thread'] = 'RDM',
+    ['cardinal cloth'] = 'RDM',
+    ['scarlet odoshi'] = 'SAM',
+    ['kurogane'] = 'SAM',
+    ['glittering yarn'] = 'SMN',
+    ['astral leather'] = 'SMN',
+    ['supple skin'] = 'THF',
+    ['light filament'] = 'THF',
+    ['ecarlate cloth'] = 'WAR',
+    ['argyro rivet'] = 'WAR',
+    ['benedict silk'] = 'WHM',
+    ['benedict yarn'] = 'WHM',
+}
+
+local LIMBUS_AF1_JOB_BY_ITEM_ID = {
+    [1930] = 'WAR', -- ecarlate_cloth
+    [1931] = 'WAR', -- argyro_rivet
+    [1932] = 'MNK', -- utopian_gold_thread
+    [1933] = 'MNK', -- ancient_brass
+    [1934] = 'WHM', -- benedict_silk
+    [1935] = 'WHM', -- benedict_yarn
+    [1936] = 'BLM', -- diabolic_silk
+    [1937] = 'BLM', -- diabolic_yarn
+    [1938] = 'RDM', -- ruby_silk_thread
+    [1939] = 'RDM', -- cardinal_cloth
+    [1940] = 'THF', -- supple_skin
+    [1941] = 'THF', -- light_filament
+    [1942] = 'PLD', -- snowy_cermet
+    [1943] = 'PLD', -- white_rivet
+    [1944] = 'DRK', -- dark_orichalcum
+    [1945] = 'DRK', -- black_rivet
+    [1946] = 'BST', -- smalt_leather
+    [1947] = 'BST', -- fetid_lanolin
+    [1948] = 'BRD', -- coiled_yarn
+    [1949] = 'BRD', -- brown_doeskin
+    [1950] = 'RNG', -- chameleon_yarn
+    [1951] = 'RNG', -- charcoal_cotton
+    [1952] = 'SAM', -- scarlet_odoshi
+    [1953] = 'SAM', -- kurogane
+    [1954] = 'NIN', -- plaited_cord
+    [1955] = 'NIN', -- ebony_lacquer
+    [1956] = 'DRG', -- cobalt_mythril_sheet
+    [1957] = 'DRG', -- blue_rivet
+    [1958] = 'SMN', -- glittering_yarn
+    [1959] = 'SMN', -- astral_leather
+}
+
+local function chip_key_for_item(name)
     local s = norm(name or '')
     if s:find('chip', 1, true) == nil then
         return nil
     end
-    local map = (cfg and cfg.chip_colors) or DEFAULT_CHIP_COLORS
     for _, key in ipairs(CHIP_MATCH_ORDER) do
         if s:find(key, 1, true) then
-            local k = (key == 'smokey') and 'smoky' or key
-            return (map and map[k]) or DEFAULT_CHIP_COLORS[k]
+            return (key == 'smokey') and 'smoky' or key
         end
     end
     return nil
+end
+
+local function chip_color_for_item(name, cfg)
+    local k = chip_key_for_item(name)
+    if not k then
+        return nil
+    end
+    local map = (cfg and cfg.chip_colors) or DEFAULT_CHIP_COLORS
+    return (map and map[k]) or DEFAULT_CHIP_COLORS[k]
+end
+
+local function limbus_sw_element_key(sess)
+    if tostring(sess and sess.limbus_path_id or '') ~= 'apollyon_south_west' then
+        return nil
+    end
+    local k = norm(tostring(sess and sess.limbus_sw_day_element or ''))
+    if k == '' then
+        return nil
+    end
+    if k == 'lightning' then
+        k = 'thunder'
+    end
+    if ELEMENT_LABELS[k] then
+        return k
+    end
+    return nil
+end
+
+local function limbus_item_key(name)
+    local s = norm(name or '')
+    if s == '' then
+        return ''
+    end
+    s = s:gsub('_', ' ')
+    s = s:gsub('[%.,%-%+%/%\\%[%]%(%)%:%;\'"]', ' ')
+    s = s:gsub('%s+', ' ')
+    s = s:gsub('^%s+', ''):gsub('%s+$', '')
+    return s
+end
+
+local function is_limbus_session(sess)
+    local ev = norm(sess and sess.event_id or '')
+    if ev == 'limbus' then
+        return true
+    end
+    local zid = tonumber(sess and sess.zone_id) or 0
+    if zid == 37 or zid == 38 then
+        return true
+    end
+    return false
+end
+
+local function limbus_item_usage_tooltip(info)
+    local function mk_tip(text, icon_kind, icon_key)
+        local tip = tostring(text or '')
+        if tip == '' then
+            return nil
+        end
+        local out = { text = tip }
+        if icon_kind ~= nil and icon_key ~= nil then
+            local kind = tostring(icon_kind or '')
+            local key = tostring(icon_key or '')
+            if kind ~= '' and key ~= '' then
+                out.icon_kind = kind
+                out.icon_key = key
+            end
+        end
+        return out
+    end
+
+    if type(info) ~= 'table' then
+        return nil
+    end
+
+    local item_id = tonumber(info.item_id) or 0
+    local chip_hint = LIMBUS_CHIP_HINT_BY_ID[item_id]
+    if chip_hint ~= nil then
+        return mk_tip(chip_hint)
+    end
+
+    local boss_hint_by_id = LIMBUS_BOSS_HINT_BY_ID[item_id]
+    if boss_hint_by_id ~= nil then
+        local equip_icon = LIMBUS_BOSS_EQUIP_ICON_BY_HINT[boss_hint_by_id]
+        return mk_tip(boss_hint_by_id, 'equip', equip_icon)
+    end
+
+    local job_by_id = LIMBUS_AF1_JOB_BY_ITEM_ID[item_id]
+    if job_by_id ~= nil and job_by_id ~= '' then
+        return mk_tip('Used by job: ' .. job_by_id, 'job', tostring(job_by_id):lower())
+    end
+
+    local key = limbus_item_key(info.name)
+    if key == '' then
+        return nil
+    end
+
+    local chip_hint_by_key = LIMBUS_CHIP_HINT_BY_KEY[key]
+    if chip_hint_by_key ~= nil then
+        return mk_tip(chip_hint_by_key)
+    end
+
+    local boss_hint_by_key = LIMBUS_BOSS_HINT_BY_KEY[key]
+    if boss_hint_by_key ~= nil then
+        local equip_icon = LIMBUS_BOSS_EQUIP_ICON_BY_HINT[boss_hint_by_key]
+        return mk_tip(boss_hint_by_key, 'equip', equip_icon)
+    end
+
+    local job = LIMBUS_AF1_JOB_BY_ITEM_KEY[key]
+    if job ~= nil and job ~= '' then
+        return mk_tip('Used by job: ' .. job, 'job', tostring(job):lower())
+    end
+    return nil
+end
+
+local function is_limbus_item_name(name)
+    local lname = norm(name or '')
+    if lname == '' then
+        return false
+    end
+
+    if is_ancient_beastcoin_name(name) then
+        return true
+    end
+
+    local key = limbus_item_key(name)
+    if key ~= '' then
+        if LIMBUS_CHIP_HINT_BY_KEY[key] ~= nil then
+            return true
+        end
+        if LIMBUS_BOSS_HINT_BY_KEY[key] ~= nil then
+            return true
+        end
+        if LIMBUS_AF1_JOB_BY_ITEM_KEY[key] ~= nil then
+            return true
+        end
+    end
+
+    if chip_key_for_item(name) ~= nil then
+        return true
+    end
+
+    return false
+end
+
+local function is_limbus_pool_item(info)
+    if type(info) ~= 'table' then
+        return false
+    end
+
+    local item_id = tonumber(info.item_id) or 0
+    if item_id ~= 0 then
+        if LIMBUS_CHIP_HINT_BY_ID[item_id] ~= nil then
+            return true
+        end
+        if LIMBUS_BOSS_HINT_BY_ID[item_id] ~= nil then
+            return true
+        end
+        if LIMBUS_AF1_JOB_BY_ITEM_ID[item_id] ~= nil then
+            return true
+        end
+    end
+
+    return is_limbus_item_name(info.name)
+end
+
+local function item_name_matches_event(name, event_id)
+    local ev = norm(event_id or '')
+    if ev == 'limbus' then
+        return is_limbus_item_name(name)
+    end
+    if ev == 'dynamis' then
+        return not is_limbus_item_name(name)
+    end
+    return true
+end
+
+local function pool_item_matches_event(info, event_id, sess)
+    local ev = norm(event_id or '')
+    local sess_ev = norm((sess and sess.event_id) or '')
+    if (sess_ev == 'dynamis' or sess_ev == 'limbus') and ev == sess_ev then
+        -- If we're currently inside this event, show the real live pool as-is.
+        return true
+    end
+    if ev == 'limbus' then
+        return is_limbus_pool_item(info)
+    end
+    if ev == 'dynamis' then
+        return not is_limbus_pool_item(info)
+    end
+    return true
 end
 
 local function default_event_minutes(sess)
@@ -854,10 +1400,6 @@ local function ensure_gate_icons_loaded()
         '\\addons\\treasure\\icons\\gate_closed.png',
         '\\addons\\treasure\\icons\\gate_closed.PNG',
     })
-    GATE_ICONS.gate = load_first({
-        '\\addons\\treasure\\icons\\gate.png',
-        '\\addons\\treasure\\icons\\gate.PNG',
-    })
     GATE_ICONS.vortex = load_first({
         '\\addons\\treasure\\icons\\vortex.png',
         '\\addons\\treasure\\icons\\vortex.PNG',
@@ -873,21 +1415,105 @@ local function ensure_gate_icons_loaded()
     GATE_ICONS.transition = load_first({
         '\\addons\\treasure\\icons\\transicion.png',
         '\\addons\\treasure\\icons\\transicion.PNG',
-        '\\addons\\treasure\\icons\\transicion.gif',
         '\\addons\\treasure\\icons\\transition.png',
         '\\addons\\treasure\\icons\\transition.PNG',
-        '\\addons\\treasure\\icons\\transition.gif',
+    })
+    GATE_ICONS.ultima = load_first({
+        '\\addons\\treasure\\icons\\ultima.png',
+        '\\addons\\treasure\\icons\\Ultima.png',
+        '\\addons\\treasure\\icons\\ultima.webp',
+        '\\addons\\treasure\\icons\\Ultima.webp',
+        '\\addons\\treasure\\icons\\ultima.jpg',
+        '\\addons\\treasure\\icons\\Ultima.jpg',
+    })
+    GATE_ICONS.status_ok = load_first({
+        '\\addons\\treasure\\icons\\ok.png',
+        '\\addons\\treasure\\icons\\OK.png',
+    })
+    GATE_ICONS.status_x = load_first({
+        '\\addons\\treasure\\icons\\x.png',
+        '\\addons\\treasure\\icons\\X.png',
     })
 
-    -- Legacy fallback icons.
-    GATE_ICONS.open = load_first({
-        '\\addons\\treasure\\icons\\open.png',
-        '\\addons\\treasure\\icons\\open.PNG',
-    })
-    GATE_ICONS.closed = load_first({
-        '\\addons\\treasure\\icons\\closed.png',
-        '\\addons\\treasure\\icons\\closed.PNG',
-    })
+    local chip_icon_map = {
+        magenta = { 'Magenta_Chip_icon', 'magenta_chip_icon' },
+        smoky = { 'Smoky_Chip_icon', 'Smokey_Chip_icon', 'smoky_chip_icon', 'smokey_chip_icon' },
+        emerald = { 'Emerald_Chip_icon', 'emerald_chip_icon' },
+        scarlet = { 'Scarlet_Chip_icon', 'scarlet_chip_icon' },
+        ivory = { 'Ivory_Chip_icon', 'ivory_chip_icon' },
+        charcoal = { 'Charcoal_Chip_icon', 'charcoal_chip_icon' },
+        smalt = { 'Smalt_Chip_icon', 'smalt_chip_icon' },
+        orchid = { 'Orchid_Chip_icon', 'orchid_chip_icon' },
+        cerulean = { 'Cerulean_Chip_icon', 'cerulean_chip_icon' },
+        silver = { 'Silver_Chip_icon', 'silver_chip_icon' },
+        metal = { 'Metal_Chip_icon', 'metal_chip_icon' },
+        niveous = { 'Niveous_Chip_icon', 'niveous_chip_icon' },
+        crepuscular = { 'Crepuscular_Chip_icon', 'crepuscular_chip_icon' },
+    }
+    for key, stems in pairs(chip_icon_map) do
+        local candidates = {}
+        for _, stem in ipairs(stems) do
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\chips\\' .. stem .. '.png'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\chips\\' .. stem .. '.PNG'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\' .. stem .. '.png'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\' .. stem .. '.PNG'
+        end
+        GATE_ICONS.chips[key] = load_first(candidates)
+    end
+
+    local elemental_icon_map = {
+        fire = { 'Fire_Elemental', 'fire_elemental' },
+        ice = { 'Ice_Elemental', 'ice_elemental' },
+        wind = { 'Wind_Elemental', 'wind_elemental' },
+        earth = { 'Earth_Elemental', 'earth_elemental' },
+        thunder = { 'Thunder_Elemental', 'Lightning_Elemental', 'thunder_elemental', 'lightning_elemental' },
+        water = { 'Water_Elemental', 'water_elemental' },
+        light = { 'Light_Elemental', 'light_elemental' },
+        dark = { 'Dark_Elemental', 'dark_elemental' },
+    }
+    for key, stems in pairs(elemental_icon_map) do
+        local candidates = {}
+        for _, stem in ipairs(stems) do
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\elementals\\' .. stem .. '.png'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\elementals\\' .. stem .. '.PNG'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\' .. stem .. '.png'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\' .. stem .. '.PNG'
+        end
+        GATE_ICONS.elementals[key] = load_first(candidates)
+    end
+
+    local job_icon_keys = {
+        'war', 'mnk', 'whm', 'blm', 'rdm', 'thf', 'pld', 'drk', 'bst', 'brd',
+        'rng', 'sam', 'nin', 'drg', 'smn', 'blu', 'cor', 'pup', 'dnc', 'sch',
+        'geo', 'run',
+    }
+    for _, key in ipairs(job_icon_keys) do
+        GATE_ICONS.jobs[key] = load_first({
+            '\\addons\\treasure\\icons\\jobs\\' .. key .. '.png',
+            '\\addons\\treasure\\icons\\jobs\\' .. key .. '.PNG',
+        })
+    end
+
+    local equip_icon_map = {
+        homam_zucchetto = { 'Homam_Zucchetto_icon', 'homam_zucchetto_icon' },
+        homam_manopolas = { 'Homam_Manopolas_icon', 'homam_manopolas_icon' },
+        homam_cosciales = { 'Homam_Cosciales_icon', 'homam_cosciales_icon' },
+        homam_gambieras = { 'Homam_Gambieras_icon', 'homam_gambieras_icon' },
+        homam_corazza = { 'Homam_Corazza_icon', 'homam_corazza_icon' },
+        nashira_turban = { 'Nashira_Turban_icon', 'nashira_turban_icon' },
+        nashira_gages = { 'Nashira_Gages_icon', 'nashira_gages_icon' },
+        nashira_seraweels = { 'Nashira_Seraweels_icon', 'nashira_seraweels_icon' },
+        nashira_crackows = { 'Nashira_Crackows_icon', 'nashira_crackows_icon' },
+        nashira_manteel = { 'Nashira_Manteel_icon', 'nashira_manteel_icon' },
+    }
+    for key, stems in pairs(equip_icon_map) do
+        local candidates = {}
+        for _, stem in ipairs(stems) do
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\equip\\' .. stem .. '.png'
+            candidates[#candidates + 1] = '\\addons\\treasure\\icons\\equip\\' .. stem .. '.PNG'
+        end
+        GATE_ICONS.equip[key] = load_first(candidates)
+    end
 end
 
 local function limbus_door_icon_kind(sess)
@@ -910,7 +1536,7 @@ local function limbus_door_icon_kind(sess)
     return 'gate'
 end
 
-local function draw_gate_icon(sess, size)
+local function draw_gate_icon(sess, size, cfg)
     ensure_gate_icons_loaded()
     if not FFI_OK then
         return false
@@ -924,18 +1550,41 @@ local function draw_gate_icon(sess, size)
     local icon_size = base_size
     local tex = nil
     local tint = ICON_TINT_WHITE
+    local uv0 = { 0, 0 }
+    local uv1 = { 1, 1 }
+
+    local anim = cfg and cfg.limbus_icon_anim
+    local transition_pulse = DEFAULT_LIMBUS_ICON_ANIM.transition_pulse
+    local vortex_open_spin = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin
+    local vortex_open_pulse = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_pulse
+    local vortex_open_spin_speed = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed
+    if type(anim) == 'table' then
+        if anim.transition_pulse ~= nil then
+            transition_pulse = (anim.transition_pulse == true)
+        end
+        if anim.vortex_open_spin ~= nil then
+            vortex_open_spin = (anim.vortex_open_spin == true)
+        end
+        if anim.vortex_open_pulse ~= nil then
+            vortex_open_pulse = (anim.vortex_open_pulse == true)
+        end
+        vortex_open_spin_speed = clamp_num(anim.vortex_open_spin_speed, 0.2, 6.0, DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed)
+    end
+
     if is_transition then
         tex = GATE_ICONS.transition
-        -- Transition pulse animation (brightness + slight zoom).
-        local pulse = (math.sin(os.clock() * 6.5) + 1.0) * 0.5
-        local scale = 0.72 + (pulse * 0.52)
-        icon_size = math.max(12, math.floor((icon_size * scale) + 0.5))
-        tint = {
-            0.50 + (0.45 * pulse),
-            0.72 + (0.28 * pulse),
-            1.00,
-            0.74 + (0.26 * pulse),
-        }
+        if transition_pulse then
+            -- Transition pulse animation (brightness + slight zoom).
+            local pulse = (math.sin(os.clock() * 6.5) + 1.0) * 0.5
+            local scale = 0.72 + (pulse * 0.52)
+            icon_size = math.max(12, math.floor((icon_size * scale) + 0.5))
+            tint = {
+                0.50 + (0.45 * pulse),
+                0.72 + (0.28 * pulse),
+                1.00,
+                0.74 + (0.26 * pulse),
+            }
+        end
     end
     if tex == nil then
         if kind == 'vortex' then
@@ -945,17 +1594,39 @@ local function draw_gate_icon(sess, size)
                 tex = GATE_ICONS.vortex_closed or GATE_ICONS.vortex or GATE_ICONS.vortex_open
             end
             tint = ICON_TINT_WHITE
+
+            -- Open-vortex animation (configurable): pseudo-radial spin using UV phase
+            -- plus optional pulse to keep visual motion clear.
+            if gate_open and vortex_open_spin then
+                local spins = os.clock() * vortex_open_spin_speed
+                local phase = math.floor((spins * 4.0) % 4.0)
+                if phase == 1 then
+                    uv0 = { 1, 0 }
+                    uv1 = { 0, 1 }
+                elseif phase == 2 then
+                    uv0 = { 1, 1 }
+                    uv1 = { 0, 0 }
+                elseif phase == 3 then
+                    uv0 = { 0, 1 }
+                    uv1 = { 1, 0 }
+                end
+
+                if vortex_open_pulse then
+                    local pulse = (math.sin(os.clock() * 7.5) + 1.0) * 0.5
+                    local scale = 0.88 + (pulse * 0.24)
+                    icon_size = math.max(12, math.floor((base_size * scale) + 0.5))
+                    tint = {
+                        0.76 + (0.22 * pulse),
+                        0.92 + (0.08 * pulse),
+                        0.88 + (0.12 * pulse),
+                        0.90 + (0.10 * pulse),
+                    }
+                end
+            end
         else
             -- Prefer dedicated colored gate variants when available.
             tex = gate_open and GATE_ICONS.gate_open or GATE_ICONS.gate_closed
-            if tex == nil and GATE_ICONS.gate ~= nil then
-                tex = GATE_ICONS.gate
-                tint = gate_open and GATE_TINT_OPEN or GATE_TINT_CLOSED
-            end
         end
-    end
-    if tex == nil then
-        tex = gate_open and GATE_ICONS.open or GATE_ICONS.closed
     end
     if tex == nil then
         return false
@@ -977,7 +1648,210 @@ local function draw_gate_icon(sess, size)
         imgui.SetCursorPosY(cy + off)
     end
 
+    imgui.Image(ptr, { icon_size, icon_size }, uv0, uv1, tint, { 0, 0, 0, 0 })
+    return true
+end
+
+local function draw_chip_icon(chip_name, chip_key, size, tint)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+
+    local key = tostring(chip_key or '')
+    if key == '' then
+        key = tostring(chip_key_for_item(chip_name) or '')
+    end
+    if key == '' then
+        return false
+    end
+
+    local tex = GATE_ICONS.chips and GATE_ICONS.chips[key] or nil
+    if tex == nil then
+        return false
+    end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    local icon_size = tonumber(size) or 16
+    if icon_size < 12 then
+        icon_size = 12
+    end
+    imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint or ICON_TINT_WHITE, { 0, 0, 0, 0 })
+    return true
+end
+
+local function draw_ultima_icon(size, tint)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+
+    local tex = GATE_ICONS.ultima
+    if tex == nil then
+        return false
+    end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    local icon_size = tonumber(size) or 16
+    if icon_size < 12 then
+        icon_size = 12
+    end
+    imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint or ICON_TINT_WHITE, { 0, 0, 0, 0 })
+    return true
+end
+
+local function draw_keyitem_status_icon(has_item, size, tint_ok, tint_x)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+
+    local tex = (has_item == true) and GATE_ICONS.status_ok or GATE_ICONS.status_x
+    if tex == nil then
+        return false
+    end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    local icon_size = tonumber(size) or 14
+    if icon_size < 10 then
+        icon_size = 10
+    end
+    local tint = (has_item == true) and (tint_ok or ICON_TINT_WHITE) or (tint_x or ICON_TINT_WHITE)
     imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint, { 0, 0, 0, 0 })
+    return true
+end
+
+local function draw_tooltip_icon(kind, key, size, tint)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+    local k = norm(key or '')
+    if k == '' then
+        return false
+    end
+
+    local tex = nil
+    local kind_norm = norm(kind or '')
+    if kind_norm == 'job' then
+        tex = GATE_ICONS.jobs and GATE_ICONS.jobs[k] or nil
+    elseif kind_norm == 'equip' then
+        tex = GATE_ICONS.equip and GATE_ICONS.equip[k] or nil
+    else
+        return false
+    end
+    if tex == nil then
+        return false
+    end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    local icon_size = tonumber(size) or 18
+    if icon_size < 12 then
+        icon_size = 12
+    end
+    imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint or ICON_TINT_WHITE, { 0, 0, 0, 0 })
+    return true
+end
+
+local function draw_hover_tooltip(text, icon_kind, icon_key)
+    local tip = ''
+    local kind = icon_kind
+    local key = icon_key
+    if type(text) == 'table' then
+        tip = tostring(text.text or '')
+        kind = kind or text.icon_kind
+        key = key or text.icon_key
+    else
+        tip = tostring(text or '')
+    end
+    if tip == '' then
+        return
+    end
+
+    local hovered = false
+    if imgui.IsItemHovered ~= nil then
+        local ok_hover, res = pcall(imgui.IsItemHovered)
+        hovered = (ok_hover and (res == true or tonumber(res) == 1))
+    end
+    if not hovered then
+        return
+    end
+
+    local has_icon = (tostring(kind or '') ~= '' and tostring(key or '') ~= '')
+    if not has_icon and imgui.SetTooltip ~= nil then
+        pcall(imgui.SetTooltip, tip)
+        return
+    end
+    if imgui.BeginTooltip ~= nil and imgui.EndTooltip ~= nil then
+        local ok_begin, opened = pcall(imgui.BeginTooltip)
+        if ok_begin and opened ~= false then
+            if has_icon then
+                local drew = draw_tooltip_icon(kind, key, 18, ICON_TINT_WHITE)
+                if drew and imgui.SameLine ~= nil then
+                    pcall(imgui.SameLine)
+                end
+            end
+            if imgui.TextUnformatted ~= nil then
+                pcall(imgui.TextUnformatted, tip)
+            else
+                pcall(imgui.Text, tip)
+            end
+            pcall(imgui.EndTooltip)
+        end
+    end
+end
+
+local function draw_element_icon(element_key, size, tint)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+
+    local key = norm(element_key or '')
+    if key == 'lightning' then
+        key = 'thunder'
+    end
+    if key == '' then
+        return false
+    end
+
+    local tex = GATE_ICONS.elementals and GATE_ICONS.elementals[key] or nil
+    if tex == nil then
+        return false
+    end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    local icon_size = tonumber(size) or 16
+    if icon_size < 12 then
+        icon_size = 12
+    end
+    imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint or ICON_TINT_WHITE, { 0, 0, 0, 0 })
+
+    local label = ELEMENT_LABELS[key]
+    if label ~= nil then
+        draw_hover_tooltip(label .. ' Elemental')
+    end
+
     return true
 end
 
@@ -1094,15 +1968,24 @@ local ui = {
     players_currency_only = false,
 }
 
+-- Avoid upvalue pressure in ui.render (Lua 5.1 limit: 60 upvalues).
+ui._limbus_sw_element_key = limbus_sw_element_key
+ui._draw_element_icon = draw_element_icon
+ui._draw_ultima_icon = draw_ultima_icon
+ui._draw_keyitem_status_icon = draw_keyitem_status_icon
+
 
 
 --------------------------------------------------------------------
 -- Pintar columnas y resizables
 --------------------------------------------------------------------
-local function draw_treasure_table (sess, C, cfg)
+local function draw_treasure_table (sess, C, cfg, event_id)
     if not sess or not sess.drops then
         return
     end
+
+    -- Always resolve loot colors by explicit event to avoid cross-event palette bleed.
+    C = event_loot_colors(cfg, event_id or (sess and sess.event_id) or 'dynamis')
 
     --Anchos de columnas persistentes
     local mode = ui.compact and 'compact' or 'full'
@@ -1121,12 +2004,14 @@ local function draw_treasure_table (sess, C, cfg)
     ----------------------------------------------------------------
     local list, count = {}, 0
     for slot, info in pairs(sess.drops.pool_live or {}) do
-        count = count + 1
-        list[#list + 1] = {
-            slot = slot,
-            info = info,
-            rest = math.max(0, math.floor(info.expire - timeutil.now()))
-        }
+        if pool_item_matches_event(info, event_id, sess) then
+            count = count + 1
+            list[#list + 1] = {
+                slot = slot,
+                info = info,
+                rest = math.max(0, math.floor(info.expire - timeutil.now()))
+            }
+        end
     end
     table.sort(list, function(a, b)
         local adt = tonumber((a.info and a.info.drop_time) or 0) or 0
@@ -1194,6 +2079,8 @@ local function draw_treasure_table (sess, C, cfg)
     imgui.Separator()
 
     -- Filas
+    local show_limbus_item_tooltips = (norm(event_id or '') == 'limbus')
+    local ev_for_color = norm(event_id or '')
     for _, e in ipairs(list) do
         local info, rest = e.info, e.rest
 
@@ -1201,11 +2088,21 @@ local function draw_treasure_table (sess, C, cfg)
                 or (rest < 120 and { 1, 0.85, 0.25, 1 })
                 or { 0.3, 1, 0.3, 1 }
         local chip_col = chip_color_for_item(info.name, cfg)
-        local col = is_cur(info.name)
-                and (is_hundo(info.name) and C.HUNDO or C.CUR)
+        local cur_name = is_event_currency_name(info.name, ev_for_color)
+        local use_hundo = (ev_for_color == 'dynamis') and is_hundo(info.name)
+        local col = cur_name
+                and (use_hundo and C.HUNDO or C.CUR)
                 or (chip_col or C.ITEM)
 
         imgui.TextColored(col, title(info.name));
+        if show_limbus_item_tooltips then
+            local tip = limbus_item_usage_tooltip(info)
+            if type(tip) == 'table' and tostring(tip.text or '') ~= '' then
+                draw_hover_tooltip(tip)
+            elseif type(tip) == 'string' and tip ~= '' then
+                draw_hover_tooltip(tip)
+            end
+        end
         imgui.NextColumn()
         imgui.TextColored(C.NAME, info.winner or '');
         imgui.NextColumn()
@@ -1273,7 +2170,7 @@ local function draw_settings_panel(cfg, C, event_id)
     end
 
     if imgui.BeginTabBar('##settings_sections_' .. active_event) then
-        if imgui.BeginTabItem('Globales') then
+        if imgui.BeginTabItem('Globals') then
             local _, _, event_label = current_event_palette()
             local list = THEMES_OK and keys(ADDON_THEMES) or { cfg.theme }
             local sel = 1
@@ -1303,30 +2200,132 @@ local function draw_settings_panel(cfg, C, event_id)
                 changed = true
             end
 
+            cfg.menu_hide = cfg.menu_hide or {}
+            local mh = cfg.menu_hide
+            if mh.hide_when_ui_hidden == nil then
+                mh.hide_when_ui_hidden = true
+                changed = true
+            end
+            if mh.hide_when_game_menu == nil then
+                mh.hide_when_game_menu = true
+                changed = true
+            end
+            if type(mh.groups) ~= 'table' then
+                mh.groups = {}
+                changed = true
+            end
+            local menu_group_defs = (type(cfg._menu_hide_group_defs) == 'table') and cfg._menu_hide_group_defs or {}
+            for _, def in ipairs(menu_group_defs) do
+                local key = tostring(def and def.key or '')
+                if key ~= '' and mh.groups[key] == nil then
+                    mh.groups[key] = true
+                    changed = true
+                end
+            end
+
+            imgui.Separator()
+            imgui.TextUnformatted('Auto-hide')
+            do
+                local v_hidden = { mh.hide_when_ui_hidden == true }
+                if imgui.Checkbox('Hide when game UI is hidden', v_hidden) then
+                    mh.hide_when_ui_hidden = v_hidden[1]
+                    changed = true
+                end
+            end
+            do
+                local v_menus = { mh.hide_when_game_menu == true }
+                if imgui.Checkbox('Hide on selected game menus', v_menus) then
+                    mh.hide_when_game_menu = v_menus[1]
+                    changed = true
+                end
+            end
+            if mh.hide_when_game_menu == true then
+                if imgui.SmallButton('Enable all menu groups') then
+                    for _, def in ipairs(menu_group_defs) do
+                        local key = tostring(def and def.key or '')
+                        if key ~= '' then
+                            mh.groups[key] = true
+                        end
+                    end
+                    changed = true
+                end
+                imgui.SameLine()
+                if imgui.SmallButton('Disable all menu groups') then
+                    for _, def in ipairs(menu_group_defs) do
+                        local key = tostring(def and def.key or '')
+                        if key ~= '' then
+                            mh.groups[key] = false
+                        end
+                    end
+                    changed = true
+                end
+
+                if #menu_group_defs > 0 then
+                    local child_h = math.min(220, math.max(110, (#menu_group_defs * 24) + 8))
+                    imgui.BeginChild('menu_hide_groups_cfg', { 0, child_h }, true)
+                    for _, def in ipairs(menu_group_defs) do
+                        local key = tostring(def and def.key or '')
+                        if key ~= '' then
+                            local label = tostring(def.label or key)
+                            local hint = tostring(def.hint or '')
+                            local v_group = { mh.groups[key] == true }
+                            if imgui.Checkbox(label .. '##menu_hide_' .. key, v_group) then
+                                mh.groups[key] = v_group[1]
+                                changed = true
+                            end
+                            if hint ~= '' then
+                                imgui.SameLine()
+                                imgui.TextDisabled(hint)
+                            end
+                        end
+                    end
+                    imgui.EndChild()
+                else
+                    imgui.TextDisabled('No menu groups available.')
+                end
+            end
+
             if active_event == 'limbus' then
                 imgui.Separator()
                 imgui.TextUnformatted('Limbus Status Icon')
-                local isz = { tonumber(cfg.limbus_icon_size) or 30.0 }
+                local isz = { tonumber(cfg.limbus_icon_size) or 28.0 }
                 if imgui.SliderFloat('Icon size (px)', isz, 16.0, 56.0, '%.0f') then
-                    cfg.limbus_icon_size = clamp_num(isz[1], 16.0, 56.0, 30.0)
+                    cfg.limbus_icon_size = clamp_num(isz[1], 16.0, 56.0, 28.0)
                     changed = true
                 end
                 if imgui.SmallButton('Reset icon size') then
-                    cfg.limbus_icon_size = 30.0
+                    cfg.limbus_icon_size = 28.0
                     changed = true
                 end
 
                 imgui.TextDisabled('Preview')
-                local preview_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 30) + 0.5))
+                local preview_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 28) + 0.5))
                 local function preview_icon(label, preview_sess)
                     imgui.BeginGroup()
-                    local ok_draw, drew = pcall(draw_gate_icon, preview_sess, preview_size)
+                    local ok_draw, drew = pcall(draw_gate_icon, preview_sess, preview_size, cfg)
                     if not (ok_draw and drew) then
                         imgui.TextUnformatted('[]')
                     end
                     imgui.TextDisabled(label)
                     imgui.EndGroup()
                 end
+
+                cfg.limbus_icon_anim = cfg.limbus_icon_anim or {}
+                if cfg.limbus_icon_anim.transition_pulse == nil then
+                    cfg.limbus_icon_anim.transition_pulse = DEFAULT_LIMBUS_ICON_ANIM.transition_pulse
+                end
+                if cfg.limbus_icon_anim.vortex_open_spin == nil then
+                    cfg.limbus_icon_anim.vortex_open_spin = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin
+                end
+                if cfg.limbus_icon_anim.vortex_open_pulse == nil then
+                    cfg.limbus_icon_anim.vortex_open_pulse = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_pulse
+                end
+                cfg.limbus_icon_anim.vortex_open_spin_speed = clamp_num(
+                        cfg.limbus_icon_anim.vortex_open_spin_speed,
+                        0.2,
+                        6.0,
+                        DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed
+                )
 
                 imgui.TextDisabled('Gate')
                 preview_icon('Closed', {
@@ -1342,6 +2341,47 @@ local function draw_settings_panel(cfg, C, event_id)
                     limbus_gate_ready = true,
                     limbus_transition_pending = false,
                 })
+
+                local v_anim = { cfg.limbus_icon_anim.vortex_open_spin == true }
+                if imgui.Checkbox('Animate vortex open', v_anim) then
+                    cfg.limbus_icon_anim.vortex_open_spin = v_anim[1]
+                    changed = true
+                end
+                local v_pulse = { cfg.limbus_icon_anim.vortex_open_pulse == true }
+                if imgui.Checkbox('Pulse vortex open', v_pulse) then
+                    cfg.limbus_icon_anim.vortex_open_pulse = v_pulse[1]
+                    changed = true
+                end
+                local v_speed = { tonumber(cfg.limbus_icon_anim.vortex_open_spin_speed) or DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed }
+                if imgui.SliderFloat('Vortex spin speed', v_speed, 0.2, 6.0, '%.1f') then
+                    cfg.limbus_icon_anim.vortex_open_spin_speed = clamp_num(v_speed[1], 0.2, 6.0, DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed)
+                    changed = true
+                end
+
+                if imgui.SmallButton('Reset icon animation') then
+                    cfg.limbus_icon_anim.transition_pulse = DEFAULT_LIMBUS_ICON_ANIM.transition_pulse
+                    cfg.limbus_icon_anim.vortex_open_spin = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin
+                    cfg.limbus_icon_anim.vortex_open_pulse = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_pulse
+                    cfg.limbus_icon_anim.vortex_open_spin_speed = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed
+                    changed = true
+                end
+
+                imgui.Separator()
+                imgui.TextUnformatted('Gunpod HP Bar')
+                cfg.limbus_hp_bar_colors = cfg.limbus_hp_bar_colors or {}
+                cfg.limbus_hp_bar_colors.high = sanitize_rgba(cfg.limbus_hp_bar_colors.high, DEFAULT_LIMBUS_HP_BAR_COLORS.high)
+                cfg.limbus_hp_bar_colors.low = sanitize_rgba(cfg.limbus_hp_bar_colors.low, DEFAULT_LIMBUS_HP_BAR_COLORS.low)
+                if imgui.ColorEdit4('HP color (high)', cfg.limbus_hp_bar_colors.high, imgui.ColorEditFlags_NoInputs) then
+                    changed = true
+                end
+                if imgui.ColorEdit4('HP color (low)', cfg.limbus_hp_bar_colors.low, imgui.ColorEditFlags_NoInputs) then
+                    changed = true
+                end
+                if imgui.SmallButton('Reset HP bar colors') then
+                    cfg.limbus_hp_bar_colors.high = copy_rgba(DEFAULT_LIMBUS_HP_BAR_COLORS.high)
+                    cfg.limbus_hp_bar_colors.low = copy_rgba(DEFAULT_LIMBUS_HP_BAR_COLORS.low)
+                    changed = true
+                end
             end
 
             imgui.Separator()
@@ -1603,7 +2643,19 @@ local function draw_settings_panel(cfg, C, event_id)
 end
 
 local function build_event_context(sess, cfg)
-    local event_id = ui.selected_event or (sess and sess.event_id) or ui.active_event
+    local zone_event_id = tostring((sess and sess.event_id) or ''):lower()
+    if zone_event_id ~= 'dynamis' and zone_event_id ~= 'limbus' then
+        zone_event_id = ''
+    end
+
+    local event_id
+    if ui.compact and zone_event_id ~= '' then
+        -- Compact mode always follows the active zone event.
+        event_id = zone_event_id
+    else
+        event_id = ui.selected_event or (zone_event_id ~= '' and zone_event_id) or ui.active_event
+    end
+
     return {
         imgui = imgui,
         ui = ui,
@@ -1611,6 +2663,9 @@ local function build_event_context(sess, cfg)
         event_id = event_id,
         cfg = cfg,
         C = event_loot_colors(cfg, event_id),
+        event_loot_colors = function(ev_id)
+            return event_loot_colors(cfg, ev_id)
+        end,
         V = cfg.visual_colors,
         TF_BORDER = TF_BORDER,
         keys = keys,
@@ -1625,10 +2680,27 @@ local function build_event_context(sess, cfg)
         default_event_minutes = default_event_minutes,
         fmt_n = fmt_n,
         store = store,
+        item_matches_event = function(name, ev_id)
+            return item_name_matches_event(name, ev_id)
+        end,
         chip_color_for_item = function(name)
             return chip_color_for_item(name, cfg)
         end,
-        draw_gate_icon = draw_gate_icon,
+        draw_styled_hp_progress = function(frac, size, text_col)
+            draw_styled_hp_progress(frac, size, text_col, cfg)
+        end,
+        draw_gate_icon = function(sess_i, size_i)
+            return draw_gate_icon(sess_i, size_i, cfg)
+        end,
+        draw_chip_icon = function(chip_name, chip_key, size_i, tint)
+            return draw_chip_icon(chip_name, chip_key, size_i, tint)
+        end,
+        draw_element_icon = function(element_key, size_i, tint)
+            return draw_element_icon(element_key, size_i, tint)
+        end,
+        draw_keyitem_status_icon = function(has_item, size_i, tint_ok, tint_x)
+            return draw_keyitem_status_icon(has_item, size_i, tint_ok, tint_x)
+        end,
         draw_treasure_table = draw_treasure_table,
         draw_settings_panel = draw_settings_panel,
     }
@@ -1674,11 +2746,31 @@ function ui.render(sess, cfg)
     end
     for k, v in pairs(DEFAULT_COLORS_LIMBUS) do
         if cfg.colors_limbus[k] == nil then
-            cfg.colors_limbus[k] = sanitize_rgba(cfg.colors[k], v)
+            cfg.colors_limbus[k] = sanitize_rgba(v, v)
             migrated_palette = true
         else
             cfg.colors_limbus[k] = sanitize_rgba(cfg.colors_limbus[k], v)
         end
+    end
+
+    -- One-time migration: old configs could mirror Limbus colors from Dynamis.
+    -- If so, restore Limbus defaults (notably Ancient Beastcoin CUR color).
+    if cfg._limbus_palette_seeded == nil then
+        local limbus_equals_dynamis = true
+        for k, _ in pairs(DEFAULT_COLORS_LIMBUS) do
+            if not rgba_equals(cfg.colors_limbus[k], cfg.colors_dynamis[k]) then
+                limbus_equals_dynamis = false
+                break
+            end
+        end
+        if limbus_equals_dynamis then
+            for k, v in pairs(DEFAULT_COLORS_LIMBUS) do
+                cfg.colors_limbus[k] = copy_rgba(v)
+            end
+            migrated_palette = true
+        end
+        cfg._limbus_palette_seeded = true
+        migrated_palette = true
     end
 
     -- Legacy compatibility: keep cfg.colors mirroring Dynamis palette.
@@ -1706,8 +2798,51 @@ function ui.render(sess, cfg)
         end
         cfg.chip_colors[key] = sanitize_rgba(cfg.chip_colors[key], DEFAULT_CHIP_COLORS[key])
     end
+    if type(cfg.limbus_hp_bar_colors) ~= 'table' then
+        cfg.limbus_hp_bar_colors = {}
+        migrated_palette = true
+    end
+    if cfg.limbus_hp_bar_colors.high == nil then
+        migrated_palette = true
+    end
+    if cfg.limbus_hp_bar_colors.low == nil then
+        migrated_palette = true
+    end
+    cfg.limbus_hp_bar_colors.high = sanitize_rgba(cfg.limbus_hp_bar_colors.high, DEFAULT_LIMBUS_HP_BAR_COLORS.high)
+    cfg.limbus_hp_bar_colors.low = sanitize_rgba(cfg.limbus_hp_bar_colors.low, DEFAULT_LIMBUS_HP_BAR_COLORS.low)
+    if type(cfg.limbus_icon_anim) ~= 'table' then
+        cfg.limbus_icon_anim = {}
+        migrated_palette = true
+    end
+    if cfg.limbus_icon_anim.transition_pulse == nil then
+        cfg.limbus_icon_anim.transition_pulse = DEFAULT_LIMBUS_ICON_ANIM.transition_pulse
+        migrated_palette = true
+    else
+        cfg.limbus_icon_anim.transition_pulse = (cfg.limbus_icon_anim.transition_pulse == true)
+    end
+    if cfg.limbus_icon_anim.vortex_open_spin == nil then
+        cfg.limbus_icon_anim.vortex_open_spin = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin
+        migrated_palette = true
+    else
+        cfg.limbus_icon_anim.vortex_open_spin = (cfg.limbus_icon_anim.vortex_open_spin == true)
+    end
+    if cfg.limbus_icon_anim.vortex_open_pulse == nil then
+        cfg.limbus_icon_anim.vortex_open_pulse = DEFAULT_LIMBUS_ICON_ANIM.vortex_open_pulse
+        migrated_palette = true
+    else
+        cfg.limbus_icon_anim.vortex_open_pulse = (cfg.limbus_icon_anim.vortex_open_pulse == true)
+    end
     do
-        local icon_sz = clamp_num(cfg.limbus_icon_size, 16.0, 56.0, 30.0)
+        local spd = clamp_num(cfg.limbus_icon_anim.vortex_open_spin_speed, 0.2, 6.0, DEFAULT_LIMBUS_ICON_ANIM.vortex_open_spin_speed)
+        if tonumber(cfg.limbus_icon_anim.vortex_open_spin_speed) ~= spd then
+            cfg.limbus_icon_anim.vortex_open_spin_speed = spd
+            migrated_palette = true
+        else
+            cfg.limbus_icon_anim.vortex_open_spin_speed = spd
+        end
+    end
+    do
+        local icon_sz = clamp_num(cfg.limbus_icon_size, 16.0, 56.0, 28.0)
         if tonumber(cfg.limbus_icon_size) ~= icon_sz then
             cfg.limbus_icon_size = icon_sz
             migrated_palette = true
@@ -1739,7 +2874,7 @@ function ui.render(sess, cfg)
     cfg.theme = cfg.theme or ((THEMES_OK and ADDON_THEMES.Default) and 'Default' or '')
     -- Ajuste de escala de fuente para toda la ventana. Valor por defecto 1.0 (sin escalado).
     cfg.font_scale = cfg.font_scale or 1.0
-    cfg.limbus_icon_size = clamp_num(cfg.limbus_icon_size, 16.0, 56.0, 30.0)
+    cfg.limbus_icon_size = clamp_num(cfg.limbus_icon_size, 16.0, 56.0, 28.0)
     local active_event = tostring(ui.selected_event or (sess and sess.event_id) or ui.active_event or 'dynamis'):lower()
     local C = event_loot_colors(cfg, active_event)
 
@@ -2018,6 +3153,13 @@ function ui.render(sess, cfg)
                 if draw_header_button('back', 'Back', false, bw_back) then
                     save_layout(cfg, mode, root_window)
                     ui.compact = true
+                    ui.selected_event_user = false
+                    if zone_event ~= '' then
+                        ui.selected_event = zone_event
+                        event_router.set_active(ui, zone_event)
+                    else
+                        ui.selected_event = tostring(event_router.get_active(ui))
+                    end
                     ui._layout_mode = ''
                     ui._last_compact_count = nil
                     ui._last_compact_height = nil
@@ -2146,33 +3288,64 @@ function ui.render(sess, cfg)
                         or (sess and sess.limbus_timer ~= nil)
                 if is_limbus then
                     local clean_t = tostring(t):gsub(':OPEN', ''):gsub(':CLOSED', '')
-                    local gate_open = (sess and sess.limbus_gate_ready == true)
-                    local is_transition = (sess and sess.limbus_transition_pending == true)
                     local time_txt = clean_t
-                    local floor_txt = ''
+                    local floor_num = math.max(1, tonumber(sess and sess.limbus_floor) or 1)
+                    local floor_cap = tonumber(sess and sess.limbus_max_floor)
+                    if floor_cap and floor_cap > 0 then
+                        floor_cap = math.floor(floor_cap)
+                    else
+                        floor_cap = nil
+                    end
+                    local floor_txt = (floor_cap and floor_cap > 0)
+                            and ('Floor ' .. tostring(math.floor(floor_num)) .. '/' .. tostring(floor_cap))
+                            or ('Floor ' .. tostring(math.floor(floor_num)))
                     do
-                        local p_time, p_floor = clean_t:match('^%s*([^|]+)%s*|%s*([^|]+)')
+                        local p_time = clean_t:match('^%s*([^|]+)')
                         if p_time and p_time ~= '' then
                             time_txt = p_time:gsub('%s+$', '')
                         end
-                        local floor_num = tonumber(sess and sess.limbus_floor)
-                        if floor_num and floor_num > 0 then
-                            floor_txt = 'Floor ' .. tostring(math.floor(floor_num))
-                        elseif p_floor and p_floor ~= '' then
-                            local parsed = tonumber((p_floor or ''):match('(%d+)'))
-                            if parsed and parsed > 0 then
-                                floor_txt = 'Floor ' .. tostring(math.floor(parsed))
-                            end
+                    end
+                    local chip_name = tostring(sess and sess.limbus_reward_chip or '')
+                    if chip_name == '' then
+                        chip_name = nil
+                    end
+                    local chip_phase = (chip_name ~= nil and floor_cap ~= nil and floor_num >= floor_cap)
+                    local sw_key_fn = ui._limbus_sw_element_key
+                    local sw_element_key = (type(sw_key_fn) == 'function') and sw_key_fn(sess) or nil
+                    local path_id = tostring(sess and sess.limbus_path_id or '')
+                    local is_central = (path_id == 'apollyon_central')
+                    local is_proto_ultima = (path_id == 'temenos_central_4')
+                    local gp = (sess and sess.limbus_gunpod) or {}
+                    local gp_max = math.max(1, tonumber(gp.max_spawns) or 5)
+                    local gp_total = math.max(0, tonumber(gp.total_spawns) or 0)
+                    if gp_total > gp_max then
+                        gp_max = gp_total
+                    end
+                    local gp_hp = tonumber(gp.active_hp)
+                    if gp_hp then
+                        if gp_hp < 0 then
+                            gp_hp = 0
+                        elseif gp_hp > 100 then
+                            gp_hp = 100
                         end
                     end
+
                     local header_txt = time_txt
-                    if floor_txt ~= '' then
-                        header_txt = time_txt .. ' | ' .. floor_txt
+                    if not is_central then
+                        header_txt = header_txt .. ' | ' .. floor_txt
+                    end
+                    if is_central then
+                        header_txt = header_txt .. ' | Gunpod ' .. tostring(gp_total) .. '/' .. tostring(gp_max)
+                    elseif chip_phase and chip_name then
+                        header_txt = header_txt .. ' | ' .. chip_name
+                    elseif is_proto_ultima then
+                        header_txt = header_txt .. ' | Proto-Ultima'
                     end
 
                     local status_col = cfg.visual_colors.HUD_TEXT or DEFAULT_VISUAL_COLORS.HUD_TEXT
-                    local icon_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 30) + 0.5))
-                    local line_h = math.max(tonumber(imgui.GetTextLineHeight()) or 0, icon_size)
+                    local icon_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 28) + 0.5))
+                    local bar_h = 14
+                    local line_h = math.max(tonumber(imgui.GetTextLineHeight()) or 0, icon_size, bar_h)
                     local sx, sy = imgui.GetCursorPos()
                     if type(sx) ~= 'number' then
                         sx, sy = _get_xy(sx)
@@ -2198,22 +3371,143 @@ function ui.render(sess, cfg)
 
                     local text_y = sy + math.max(0, (line_h - (tonumber(imgui.GetTextLineHeight()) or line_h)) * 0.5)
                     local icon_y = sy + math.max(0, (line_h - icon_size) * 0.5)
+                    local bar_w = math.max(96, math.floor(avail_w2 * 0.40))
+                    if bar_w > 180 then
+                        bar_w = 180
+                    end
+                    local bar_x = sx + math.max(0, avail_w2 - bar_w)
+                    local bar_y = sy + math.max(0, (line_h - bar_h) * 0.5)
 
                     imgui.SetCursorPosX(sx)
                     imgui.SetCursorPosY(text_y)
                     imgui.TextColored(status_col, header_txt)
 
-                    imgui.SetCursorPosX(icon_x)
-                    imgui.SetCursorPosY(icon_y)
-                    local ok_icon, drew_icon = pcall(draw_gate_icon, sess, icon_size)
-                    if not (ok_icon and drew_icon) then
-                        local ok_col = cfg.visual_colors.STATE_OK or DEFAULT_VISUAL_COLORS.STATE_OK
-                        local fall_col = status_col
-                        local fall_txt = is_transition and 'Transition' or (gate_open and 'Open' or 'Closed')
-                        local fw = text_width(fall_txt)
-                        imgui.SetCursorPosX(sx + math.max(0, avail_w2 - fw))
-                        imgui.SetCursorPosY(text_y)
-                        imgui.TextColored(is_transition and fall_col or (gate_open and ok_col or fall_col), fall_txt)
+                    if is_central then
+                        if gp_hp ~= nil then
+                            local hp_frac = math.max(0.0, math.min(1.0, gp_hp / 100.0))
+                            imgui.SetCursorPosX(bar_x)
+                            imgui.SetCursorPosY(bar_y)
+                            draw_styled_hp_progress(hp_frac, { bar_w, bar_h }, status_col, cfg)
+                        end
+                    elseif chip_phase and chip_name then
+                        local chip_col = chip_color_for_item(chip_name, cfg)
+                                or (cfg.colors_limbus and cfg.colors_limbus.CUR)
+                                or DEFAULT_COLORS_LIMBUS.CUR
+                        local chip_key = tostring(sess and sess.limbus_reward_chip_key or '')
+                        if chip_key == '' then
+                            chip_key = nil
+                        end
+                        local show_element_icon = (sw_element_key ~= nil and sw_element_key ~= '')
+                        local icon_gap = 4
+                        local chip_icon_x = icon_x
+                        local elem_icon_x = nil
+                        if show_element_icon then
+                            local duo_w = (icon_size * 2) + icon_gap
+                            chip_icon_x = sx + math.max(0, avail_w2 - duo_w)
+                            elem_icon_x = chip_icon_x + icon_size + icon_gap
+                        end
+                        imgui.SetCursorPosX(chip_icon_x)
+                        imgui.SetCursorPosY(icon_y)
+                        local ok_chip, drew_chip = pcall(draw_chip_icon, chip_name, chip_key, icon_size, chip_col)
+                        local drew_elem = false
+                        if show_element_icon then
+                            imgui.SetCursorPosX(elem_icon_x or icon_x)
+                            imgui.SetCursorPosY(icon_y)
+                            local elem_fn = ui._draw_element_icon
+                            if type(elem_fn) == 'function' then
+                                local ok_elem, elem_res = pcall(elem_fn, sw_element_key, icon_size, { 1, 1, 1, 1 })
+                                drew_elem = (ok_elem and elem_res == true)
+                            end
+                        end
+                        if not (ok_chip and drew_chip) then
+                            local badge = '[C]'
+                            local bw = text_width(badge)
+                            local tx = sx + math.max(0, avail_w2 - bw)
+                            if show_element_icon then
+                                tx = tx - (icon_size + icon_gap)
+                            end
+                            imgui.SetCursorPosX(tx)
+                            imgui.SetCursorPosY(text_y)
+                            imgui.TextColored(chip_col, badge)
+                        end
+                        -- Elemental helper is icon-only by design (no text fallback).
+                    elseif is_proto_ultima then
+                        imgui.SetCursorPosX(icon_x)
+                        imgui.SetCursorPosY(icon_y)
+                        local ultima_fn = ui._draw_ultima_icon
+                        local ok_ult, drew_ult = false, false
+                        if type(ultima_fn) == 'function' then
+                            ok_ult, drew_ult = pcall(ultima_fn, icon_size, { 1, 1, 1, 1 })
+                        end
+                        if ok_ult and drew_ult then
+                            local hovered = false
+                            if imgui.IsItemHovered ~= nil then
+                                local ok_hover, hover_res = pcall(imgui.IsItemHovered)
+                                hovered = (ok_hover and (hover_res == true or tonumber(hover_res) == 1))
+                            end
+                            if hovered then
+                                if imgui.SetTooltip ~= nil then
+                                    pcall(imgui.SetTooltip, 'Proto-Ultima fight')
+                                elseif imgui.BeginTooltip ~= nil and imgui.EndTooltip ~= nil then
+                                    local ok_begin, opened = pcall(imgui.BeginTooltip)
+                                    if ok_begin and opened ~= false then
+                                        if imgui.TextUnformatted ~= nil then
+                                            pcall(imgui.TextUnformatted, 'Proto-Ultima fight')
+                                        else
+                                            pcall(imgui.Text, 'Proto-Ultima fight')
+                                        end
+                                        pcall(imgui.EndTooltip)
+                                    end
+                                end
+                            end
+                        else
+                            local badge = '[U]'
+                            local bw = text_width(badge)
+                            local tx = sx + math.max(0, avail_w2 - bw)
+                            imgui.SetCursorPosX(tx)
+                            imgui.SetCursorPosY(text_y)
+                            imgui.TextColored(status_col, badge)
+                        end
+                    else
+                        local gate_open = (sess and sess.limbus_gate_ready == true)
+                        local is_transition = (sess and sess.limbus_transition_pending == true)
+                        local zone_name_tip = tostring(sess and sess.zone_name or ''):lower()
+                        local door_label = (zone_name_tip:find('apollyon', 1, true) ~= nil) and 'Vortex' or 'Gate'
+                        local status_tip = is_transition and (door_label .. ' TRANSITION')
+                                or (gate_open and (door_label .. ' OPEN - You can go up now.') or (door_label .. ' CLOSED'))
+                        imgui.SetCursorPosX(icon_x)
+                        imgui.SetCursorPosY(icon_y)
+                        local ok_icon, drew_icon = pcall(draw_gate_icon, sess, icon_size, cfg)
+                        if ok_icon and drew_icon then
+                            local hovered = false
+                            if imgui.IsItemHovered ~= nil then
+                                local ok_hover, hover_res = pcall(imgui.IsItemHovered)
+                                hovered = (ok_hover and (hover_res == true or tonumber(hover_res) == 1))
+                            end
+                            if hovered then
+                                if imgui.SetTooltip ~= nil then
+                                    pcall(imgui.SetTooltip, status_tip)
+                                elseif imgui.BeginTooltip ~= nil and imgui.EndTooltip ~= nil then
+                                    local ok_begin, opened = pcall(imgui.BeginTooltip)
+                                    if ok_begin and opened ~= false then
+                                        if imgui.TextUnformatted ~= nil then
+                                            pcall(imgui.TextUnformatted, status_tip)
+                                        else
+                                            pcall(imgui.Text, status_tip)
+                                        end
+                                        pcall(imgui.EndTooltip)
+                                    end
+                                end
+                            end
+                        else
+                            local ok_col = cfg.visual_colors.STATE_OK or DEFAULT_VISUAL_COLORS.STATE_OK
+                            local fall_col = status_col
+                            local fall_txt = is_transition and 'Transition' or (gate_open and 'Open' or 'Closed')
+                            local fw = text_width(fall_txt)
+                            imgui.SetCursorPosX(sx + math.max(0, avail_w2 - fw))
+                            imgui.SetCursorPosY(text_y)
+                            imgui.TextColored(is_transition and fall_col or (gate_open and ok_col or fall_col), fall_txt)
+                        end
                     end
 
                     imgui.SetCursorPosX(pad)
@@ -2282,9 +3576,19 @@ function ui.render(sess, cfg)
                 cnt = cnt + 1
             end
 
-            -- Only recompute / apply when count changes
-            if cnt ~= ui._last_compact_count then
+            -- Recompute on item-count changes AND when top compact block changes
+            -- (e.g. Limbus status line appears/disappears).
+            local top_area = imgui.GetCursorPosY()
+            if type(top_area) ~= 'number' then
+                local _, ty = _get_xy(top_area)
+                top_area = ty
+            end
+            top_area = tonumber(top_area) or 0
+            local top_changed = (ui._top_area == nil) or (math.abs(top_area - (tonumber(ui._top_area) or 0)) > 1)
+
+            if (cnt ~= ui._last_compact_count) or top_changed then
                 ui._last_compact_count = cnt
+                ui._top_area = top_area
 
                 local style = imgui.GetStyle()
                 local row_h = imgui.GetTextLineHeight() + style.FramePadding.y * 2
@@ -2298,17 +3602,19 @@ function ui.render(sess, cfg)
                 end
                 child_h = math.min(row_h * 11, child_h) -- cap
 
-                -- Capture top area once (title/buttons/tabs)
-                if not ui._top_area then
-                    ui._top_area = imgui.GetCursorPosY()
-                end
-
                 local total_h = math.floor(ui._top_area + child_h + style.WindowPadding.y + 0.5)
 
                 -- Avoid tiny jitter
                 if (not ui._last_compact_height) or math.abs(total_h - ui._last_compact_height) > 1 then
+                    local px, py = imgui.GetWindowPos()
+                    if type(px) ~= 'number' then
+                        px, py = _get_xy(px)
+                    end
+                    px = tonumber(px) or 0
+                    py = tonumber(py) or 0
                     local w, _ = imgui.GetWindowSize()
                     imgui.SetWindowSize({ w, total_h })
+                    imgui.SetWindowPos({ px, py })
                     ui._last_compact_height = total_h
                 end
             end

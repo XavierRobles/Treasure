@@ -55,6 +55,10 @@ function dynamis.render(ctx)
     local sess = ctx.sess
     local cfg = ctx.cfg
     local C = ctx.C
+    local get_event_loot_colors = ctx.event_loot_colors
+    if type(get_event_loot_colors) == 'function' then
+        C = get_event_loot_colors('dynamis') or C
+    end
     local TF_BORDER = ctx.TF_BORDER
     local keys = ctx.keys
     local is_cur = ctx.is_cur
@@ -70,6 +74,16 @@ function dynamis.render(ctx)
     local store = ctx.store
     local draw_treasure_table = ctx.draw_treasure_table
     local draw_settings_panel = ctx.draw_settings_panel
+    local item_matches_event = ctx.item_matches_event or function()
+        return true
+    end
+    local sess_event = tostring((sess and sess.event_id) or ''):lower()
+    local function dynamis_item_ok(name)
+        if sess_event == 'dynamis' then
+            return true
+        end
+        return item_matches_event(name, 'dynamis')
+    end
 
 if imgui.BeginTabBar('##edtabs') then
         ----------------------------------------------------------------
@@ -77,7 +91,7 @@ if imgui.BeginTabBar('##edtabs') then
         ----------------------------------------------------------------
         if ui.compact then
             if imgui.BeginTabItem('Treasure') then
-                draw_treasure_table(sess, C, cfg)
+                draw_treasure_table(sess, C, cfg, 'dynamis')
                 imgui.EndTabItem()
             end
             ------------------------------------------------------------ FULL VIEW
@@ -93,19 +107,23 @@ if imgui.BeginTabBar('##edtabs') then
 
                 local acc = {}
                 for n, q in pairs(sess.drops.currency_total) do
-                    acc[n] = { q = q, e = 0, l = 0 }
+                    if dynamis_item_ok(n) then
+                        acc[n] = { q = q, e = 0, l = 0 }
+                    end
                 end
                 for _, pl in pairs(sess.drops.equips_by_player) do
                     for _, it in ipairs(pl) do
-                        local a = acc[it] or { q = 0, e = 0, l = 0 };
-                        a.e = a.e + 1;
-                        acc[it] = a
+                        if dynamis_item_ok(it) then
+                            local a = acc[it] or { q = 0, e = 0, l = 0 };
+                            a.e = a.e + 1;
+                            acc[it] = a
+                        end
                     end
                 end
                 local lost_list = sess.drops.lost or {}
                 for _, ln in ipairs(lost_list) do
                     local it = lost_name(ln)
-                    if it ~= '' then
+                    if it ~= '' and dynamis_item_ok(it) then
                         local a = acc[it] or { q = 0, e = 0, l = 0 }
                         a.l = a.l + 1
                         acc[it] = a
@@ -138,7 +156,7 @@ if imgui.BeginTabBar('##edtabs') then
                     local total_units = 0
 
                     for name, qty in pairs(sess.drops.currency_total or {}) do
-                        if is_cur(name) then
+                        if is_cur(name) and dynamis_item_ok(name) then
                             local units = to_units(name, qty)
                             local base = base_cur(name)
                             agg[base] = (agg[base] or 0) + units
@@ -187,13 +205,13 @@ if imgui.BeginTabBar('##edtabs') then
                     lost = {}
                     for _, ln in ipairs(sess.drops.lost or {}) do
                         local it = lost_name(ln)
-                        if it ~= '' then
+                        if it ~= '' and dynamis_item_ok(it) then
                             lost[it] = (lost[it] or 0) + 1
                         end
                     end
                 end
                 for _, cur in ipairs(keys(sess.drops.currency_total or {})) do
-                    if is_cur(cur) then
+                    if is_cur(cur) and dynamis_item_ok(cur) then
                         local qty = sess.drops.currency_total[cur] or 0
                         local lst = lost[cur] or 0
                         local col = is_hundo(cur) and C.HUNDO or C.CUR
@@ -297,9 +315,20 @@ if imgui.BeginTabBar('##edtabs') then
             -- ---------------------------------------------------------------- PLAYERS
             if imgui.BeginTabItem('Players') then
                 local plist = {}
-                for _, p in ipairs(keys(sess.drops.by_player or {})) do
+                local by_player = sess.drops.by_player or {}
+                for _, p in ipairs(keys(by_player)) do
                     if is_valid_player_name(p) then
-                        plist[#plist + 1] = p
+                        local bag = by_player[p] or {}
+                        local include = false
+                        for _, it in ipairs(keys(bag)) do
+                            if dynamis_item_ok(it) and (tonumber(bag[it]) or 0) > 0 then
+                                include = true
+                                break
+                            end
+                        end
+                        if include then
+                            plist[#plist + 1] = p
+                        end
                     end
                 end
 
@@ -351,6 +380,9 @@ if imgui.BeginTabBar('##edtabs') then
                 local TFLAGS = bit.bor(TF_BORDER, imgui.TableFlags_Resizable or 0)
 
                 local function should_show_item(it)
+                    if not dynamis_item_ok(it) then
+                        return false
+                    end
                     if not ui.players_currency_only then
                         return true
                     end
@@ -443,9 +475,20 @@ if imgui.BeginTabBar('##edtabs') then
             ---------------------------------------------------------------- ITEMS
             if imgui.BeginTabItem('Items') then
                 local plist = {}
-                for _, p in ipairs(keys(sess.drops.by_player or {})) do
+                local by_player = sess.drops.by_player or {}
+                for _, p in ipairs(keys(by_player)) do
                     if is_valid_player_name(p) then
-                        plist[#plist + 1] = p
+                        local bag = by_player[p] or {}
+                        local include = false
+                        for _, it in ipairs(keys(bag)) do
+                            if dynamis_item_ok(it) and (tonumber(bag[it]) or 0) > 0 and (not is_cur(it)) then
+                                include = true
+                                break
+                            end
+                        end
+                        if include then
+                            plist[#plist + 1] = p
+                        end
                     end
                 end
 
@@ -457,7 +500,7 @@ if imgui.BeginTabBar('##edtabs') then
 
                     local rows = {}
                     for _, it in ipairs(keys(bag)) do
-                        if not is_cur(it) then
+                        if dynamis_item_ok(it) and (not is_cur(it)) then
                             local qty = tonumber(bag[it]) or 0
                             if qty > 0 then
                                 rows[#rows + 1] = { item = it, qty = qty }
@@ -515,12 +558,14 @@ if imgui.BeginTabBar('##edtabs') then
                         tm = tostring(ln):match('^(%d%d:%d%d:%d%d)') or '--'
                     end
 
-                    local col = is_cur(name) and (is_hundo(name) and C.HUNDO or C.CUR) or C.ITEM
-                    imgui.TableNextRow()
-                    imgui.TableSetColumnIndex(0)
-                    imgui.Text(tm)
-                    imgui.TableSetColumnIndex(1)
-                    imgui.TextColored(col, title(name))
+                    if dynamis_item_ok(name) then
+                        local col = is_cur(name) and (is_hundo(name) and C.HUNDO or C.CUR) or C.ITEM
+                        imgui.TableNextRow()
+                        imgui.TableSetColumnIndex(0)
+                        imgui.Text(tm)
+                        imgui.TableSetColumnIndex(1)
+                        imgui.TextColored(col, title(name))
+                    end
                 end
 
                 imgui.EndTable();
@@ -529,7 +574,7 @@ if imgui.BeginTabBar('##edtabs') then
 
             ---------------------------------------------------------------- TREASURE
             if imgui.BeginTabItem('Treasure') then
-                draw_treasure_table(sess, C, cfg)
+                draw_treasure_table(sess, C, cfg, 'dynamis')
                 imgui.EndTabItem()
             end
 
@@ -895,7 +940,7 @@ if imgui.BeginTabBar('##edtabs') then
                     -- Drops total (units) (read-only)
                     local detected_units = {}
                     for name, qty in pairs(sess.drops.currency_total or {}) do
-                        if is_cur(name) then
+                        if is_cur(name) and dynamis_item_ok(name) then
                             local units = to_units(name, qty)
                             local base = base_cur(name)
                             detected_units[base] = (detected_units[base] or 0) + units
@@ -966,7 +1011,7 @@ if imgui.BeginTabBar('##edtabs') then
 
                     local agg = {}
                     for name, qty in pairs(sess.drops.currency_total or {}) do
-                        if is_cur(name) then
+                        if is_cur(name) and dynamis_item_ok(name) then
                             local units = to_units(name, qty)
                             local base = base_cur(name)
                             agg[base] = (agg[base] or 0) + units
