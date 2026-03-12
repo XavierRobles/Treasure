@@ -159,8 +159,10 @@ local function _save_config_file(cfg)
 end
 
 local function persist(cfg)
-    if cfg and cfg._config_file then
-        local ok = pcall(_save_config_file, cfg)
+    if cfg then
+        if cfg._config_file then
+            pcall(_save_config_file, cfg)
+        end
         return
     end
     if SETTINGS_OK and settings and settings.save then
@@ -209,7 +211,7 @@ local function _get_xy(vec)
 end
 
 local DEFAULT_TRE_COLS = {
-    compact = { 250, 150, 60, 60 },
+    compact = { 136.59790039063, 62.51375579834, 43.9694480896, 38.918895721436 },
     full = { 300, 200, 60, 60 },
 }
 
@@ -2602,29 +2604,25 @@ local function draw_settings_panel(cfg, C, event_id)
             imgui.EndTabItem()
         end
 
-        if imgui.BeginTabItem('Chips') then
-            if active_event == 'limbus' then
-                imgui.TextUnformatted('Limbus Chip Colors')
-                local CC = cfg.chip_colors or {}
-                local function cpicker(key)
-                    local label = CHIP_COLOR_LABELS[key] or (title(key) .. ' Chip')
-                    if imgui.ColorEdit4(label, CC[key], imgui.ColorEditFlags_NoInputs) then
-                        changed = true
-                    end
-                end
-                for _, key in ipairs(CHIP_COLOR_KEYS) do
-                    cpicker(key)
-                end
-                if imgui.SmallButton('Reset chip colors') then
-                    for _, key in ipairs(CHIP_COLOR_KEYS) do
-                        CC[key] = copy_rgba(DEFAULT_CHIP_COLORS[key])
-                    end
+        if active_event == 'limbus' and imgui.BeginTabItem('Chips') then
+            imgui.TextUnformatted('Limbus Chip Colors')
+            local CC = cfg.chip_colors or {}
+            local function cpicker(key)
+                local label = CHIP_COLOR_LABELS[key] or (title(key) .. ' Chip')
+                if imgui.ColorEdit4(label, CC[key], imgui.ColorEditFlags_NoInputs) then
                     changed = true
                 end
-                cfg.chip_colors = CC
-            else
-                imgui.TextDisabled('No chips configuration for Dynamis.')
             end
+            for _, key in ipairs(CHIP_COLOR_KEYS) do
+                cpicker(key)
+            end
+            if imgui.SmallButton('Reset chip colors') then
+                for _, key in ipairs(CHIP_COLOR_KEYS) do
+                    CC[key] = copy_rgba(DEFAULT_CHIP_COLORS[key])
+                end
+                changed = true
+            end
+            cfg.chip_colors = CC
             imgui.EndTabItem()
         end
 
@@ -2883,7 +2881,7 @@ function ui.render(sess, cfg)
     ----------------------------------------------------------------
     cfg.layout = cfg.layout or {}
     cfg.layout.compact = cfg.layout.compact or {
-        window = { w = 360, h = 420 },
+        window = { x = 820, y = 270, w = 298, h = 181 },
         cols = copy_cols(DEFAULT_TRE_COLS.compact),
     }
     cfg.layout.full = cfg.layout.full or {
@@ -3042,6 +3040,20 @@ function ui.render(sess, cfg)
         end
         if (not ui.selected_event_user) or (not ui.selected_event) or ui.selected_event == '' then
             ui.selected_event = (zone_event ~= '' and zone_event) or tostring(event_router.get_active(ui))
+        end
+
+        local function limbus_run_header_text_for_compact()
+            local sess_event = tostring((sess and sess.event_id) or ''):lower()
+            if sess_event ~= 'limbus' then
+                return nil
+            end
+            local route_label = tostring(sess and sess.limbus_path_label or '')
+            local zone_label = tostring(sess and sess.zone_name or '')
+            local base_label = route_label ~= '' and route_label or zone_label
+            if base_label ~= '' then
+                return base_label
+            end
+            return nil
         end
 
         if not ui.compact then
@@ -3345,7 +3357,8 @@ function ui.render(sess, cfg)
                     local status_col = cfg.visual_colors.HUD_TEXT or DEFAULT_VISUAL_COLORS.HUD_TEXT
                     local icon_size = math.max(12, math.floor((tonumber(cfg.limbus_icon_size) or 28) + 0.5))
                     local bar_h = 14
-                    local line_h = math.max(tonumber(imgui.GetTextLineHeight()) or 0, icon_size, bar_h)
+                    local text_h = tonumber(imgui.GetTextLineHeight()) or 0
+                    local line_h = math.max(text_h, icon_size, bar_h)
                     local sx, sy = imgui.GetCursorPos()
                     if type(sx) ~= 'number' then
                         sx, sy = _get_xy(sx)
@@ -3369,7 +3382,26 @@ function ui.render(sess, cfg)
 
                     local icon_x = sx + math.max(0, avail_w2 - icon_size)
 
-                    local text_y = sy + math.max(0, (line_h - (tonumber(imgui.GetTextLineHeight()) or line_h)) * 0.5)
+                    local text_y = sy + math.max(0, (line_h - text_h) * 0.5)
+                    do
+                        local run_subtitle = limbus_run_header_text_for_compact()
+                        if run_subtitle and run_subtitle ~= '' and imgui.SetWindowFontScale ~= nil then
+                            local base_scale = tonumber(cfg.font_scale) or 1.0
+                            if base_scale <= 0 then
+                                base_scale = 1.0
+                            end
+                            local sub_scale = math.max(0.70, math.min(base_scale, base_scale * 0.82))
+                            local sub_h = math.max(1, text_h * (sub_scale / base_scale))
+                            local sub_y = math.max(0, sy - math.floor(sub_h + 1.5))
+                            local sub_col = copy_rgba(status_col)
+                            sub_col[4] = math.max(0.15, math.min(1.0, (tonumber(sub_col[4]) or 1.0) * 0.72))
+                            pcall(imgui.SetWindowFontScale, sub_scale)
+                            imgui.SetCursorPosX(sx)
+                            imgui.SetCursorPosY(sub_y)
+                            imgui.TextColored(sub_col, run_subtitle)
+                            pcall(imgui.SetWindowFontScale, base_scale)
+                        end
+                    end
                     local icon_y = sy + math.max(0, (line_h - icon_size) * 0.5)
                     local bar_w = math.max(96, math.floor(avail_w2 * 0.40))
                     if bar_w > 180 then

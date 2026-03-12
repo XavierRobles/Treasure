@@ -13,7 +13,6 @@ addon.author = 'Waky'
 addon.version = '1.0.7'
 
 require('common')
-local settings = require('settings')
 local core = require('core')
 local parser = require('parser')
 local store = require('store')
@@ -43,6 +42,17 @@ local function _dump_cfg(tbl, ind)
         end
     end
     return out .. ind .. '}'
+end
+
+local function _clone_cfg(v)
+    if type(v) ~= 'table' then
+        return v
+    end
+    local out = {}
+    for k, val in pairs(v) do
+        out[k] = _clone_cfg(val)
+    end
+    return out
 end
 
 local SEP = "\xFD\x01\x02\x05\xA9\xFD"
@@ -565,8 +575,8 @@ local DEFAULT_CONFIG = {
             cur_cols = { 201.71, 100.86, 100.86, 80.68 },
         },
         compact = {
-            window = { x = 820, y = 270, w = 266, h = 270 },
-            cols = { 105.14, 55.42, 38.98, 50.46 },
+            window = { x = 820, y = 270, w = 298, h = 181 },
+            cols = { 136.59790039063, 62.51375579834, 43.9694480896, 38.918895721436 },
         },
 
     },
@@ -578,8 +588,11 @@ local function ensure_settings()
     local ent = GetPlayerEntity()
     local pname = ent and ent.Name
     if not pname or pname == '' or pname == 'UNKNOWN' then
-        local ok, loaded = pcall(settings.load, DEFAULT_CONFIG)
-        return (ok and loaded) or DEFAULT_CONFIG
+        local loaded = _clone_cfg(DEFAULT_CONFIG)
+        ensure_menu_hide_cfg(loaded)
+        loaded.default_mode = loaded.default_mode or 'compact'
+        ui.compact = (loaded.default_mode ~= 'full')
+        return loaded
     end
 
     local base_dir = AshitaCore:GetInstallPath() .. '\\config\\addons\\treasure\\'
@@ -615,12 +628,7 @@ local function ensure_settings()
     end
 
     if not cfg then
-        local ok, loaded = pcall(settings.load, DEFAULT_CONFIG)
-        if not ok or not loaded then
-            loaded = DEFAULT_CONFIG
-            settings.save(loaded)
-        end
-        cfg = loaded
+        cfg = _clone_cfg(DEFAULT_CONFIG)
     end
 
     ensure_menu_hide_cfg(cfg)
@@ -637,18 +645,17 @@ local function save_character_settings(cfg)
     if not cfg then
         return
     end
-    if cfg._config_file and cfg._config_file ~= '' then
-        local dir = cfg._config_file:match('^(.*)[/\\]')
-        if dir and not fs.exists(dir) then
-            fs.create_dir(dir)
-        end
-        local f = io.open(cfg._config_file, 'w+')
-        if f then
-            f:write('return ' .. _dump_cfg(cfg) .. '\n')
-            f:close()
-        end
-    elseif settings and settings.save then
-        settings.save(cfg)
+    if not (cfg._config_file and cfg._config_file ~= '') then
+        return
+    end
+    local dir = cfg._config_file:match('^(.*)[/\\]')
+    if dir and not fs.exists(dir) then
+        fs.create_dir(dir)
+    end
+    local f = io.open(cfg._config_file, 'w+')
+    if f then
+        f:write('return ' .. _dump_cfg(cfg) .. '\n')
+        f:close()
     end
 end
 

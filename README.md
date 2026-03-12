@@ -22,6 +22,7 @@
 ## 📌 Changelog
 ### v1.0.7 (English)
 
+- Added a new event: **Limbus**.
 - Added a dedicated event router so Dynamis and Limbus keep separate runtime and UI logic.
 - Added full **Limbus** support with its own session flow and zone detection (ID and zone-name fallback).
 - Added Limbus timer parsing for start, extension, time-left sync, and end-of-run message handling.
@@ -68,6 +69,7 @@
 
 ### v1.0.7 (Español)
 
+- Añadido un nuevo evento: **Limbus**.
 - Añadido un router de eventos para separar por completo la lógica y UI de Dynamis y Limbus.
 - Añadido soporte completo para **Limbus** con flujo de sesión propio y detección de zona por ID y por nombre.
 - Añadido parser de tiempo de Limbus para inicio, extensiones, sincronización por minutos restantes y fin real de run.
