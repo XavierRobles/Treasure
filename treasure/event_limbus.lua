@@ -1175,6 +1175,12 @@ local function handle_timer_line(line, sess)
 
     local l = normalize_chat_line(line)
 
+    -- Ignore generic "Time left: ..." chat lines coming from treasure-pool inspect
+    -- or other addons. They are not reliable Limbus run timer signals.
+    if l:find('time left:', 1, true) ~= nil then
+        return false
+    end
+
     local start_min = l:match('you may stay in limbus for%s+(%d+)%s+minutes?')
     if start_min then
         set_start_time(sess, start_min)
