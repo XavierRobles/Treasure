@@ -1206,24 +1206,9 @@ local function handle_timer_line(line, sess)
         return true
     end
 
-    -- Some servers emit periodic messages like:
-    --   "Time left: (0:10:00)"
-    local hh, mm, ss = l:match('time%s+left:%s*%((%d+):(%d+):(%d+)%)')
-    if not hh then
-        hh, mm, ss = l:match('time%s+left:%s*(%d+):(%d+):(%d+)')
-    end
-    if hh and mm and ss then
-        ensure_timer(sess, nil, true)
-        local now = os.time()
-        local rem = ((tonumber(hh) or 0) * 3600) + ((tonumber(mm) or 0) * 60) + (tonumber(ss) or 0)
-        sess.limbus_timer.end_at = now + math.max(0, rem)
-        sess.limbus_timer.fallback_end_at = sess.limbus_timer.end_at
-        sess.limbus_timer.desynced = false
-        sess.limbus_timer.last_sync_at = now
-        mark_run_started(sess, false)
-        store.save(sess)
-        return true
-    end
+    -- NOTE:
+    -- Ignore generic lines like "Time left: (0:05:00)" because they also appear
+    -- when inspecting treasure-pool items and would desync the Limbus timer.
 
     if l:find('you can no longer hear a faint hum', 1, true) then
         ensure_timer(sess, nil, true)
