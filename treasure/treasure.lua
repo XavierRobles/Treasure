@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.0.7
+-- Versión: 1.0.8
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.7'
+addon.version = '1.0.8'
 
 require('common')
 local core = require('core')
@@ -68,6 +68,7 @@ local lastLimbusPoolProbe = 0
 local limbusExitSeenAt = nil
 
 local LIMBUS_POST_EXIT_GRACE = 20
+local LIMBUS_POST_RUN_HOLD_SECONDS = 330
 
 local function print_local(msg)
     print(chat.header('Treasure'):append(chat.message(msg or '')))
@@ -158,6 +159,16 @@ local function should_keep_limbus_session(sess, now_tick, refresh_pool, allow_gr
     end
     if not ended then
         return false
+    end
+
+    local ended_at = tonumber(sess.limbus_run_ended_at) or now_os
+    if (now_os - ended_at) < LIMBUS_POST_RUN_HOLD_SECONDS then
+        if refresh_pool and (force_refresh or ((now_tick - lastLimbusPoolProbe) > 0.40)) then
+            parser.update_treasure_pool(sess)
+            lastLimbusPoolProbe = now_tick
+        end
+        limbusExitSeenAt = nil
+        return true
     end
 
     if refresh_pool and (force_refresh or ((now_tick - lastLimbusPoolProbe) > 0.40)) then
@@ -1023,7 +1034,10 @@ ashita.events.register('d3d_present', 'treasure_present', function()
             limbusExitSeenAt = nil
         end
     else
-        if not should_keep_limbus_session(session, now_tick, true, false, true) then
+        -- Outside known event zones: close the active event session as soon as
+        -- we are in a valid non-event zone. Keep session during transient
+        -- zoning states (0 / 0xFFFF).
+        if zid ~= 0 and zid ~= 0xFFFF then
             close_active_session('zone_exit')
         end
     end
@@ -1056,15 +1070,6 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         local handler = event_router.get(ev_id)
         if handler and handler.on_tick then
             handler.on_tick(session, now_tick)
-        end
-    end
-
-    -- While still inside Limbus zone, finalize the run once timer ended and pool is done.
-    if session and session.is_event and session_event_id(session) == 'limbus' then
-        if session.limbus_run_started == true and session.limbus_run_ended == true then
-            if not should_keep_limbus_session(session, now_tick, true, false, true) then
-                finalize_limbus_run(session, 'pool_done')
-            end
         end
     end
 
@@ -1108,10 +1113,14 @@ end)
 
 ------------------------------------------------------------------ zone salida
 ashita.events.register('zone_change', 'treasure_zone', function()
-    if session and session.is_event and session_event_id(session) == 'limbus'
-            and should_keep_limbus_session(session, timeutil.now(), true, false, true) then
-        limbusExitSeenAt = limbusExitSeenAt or timeutil.now()
-        return
+    if session and session.is_event and session_event_id(session) == 'limbus' then
+        local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
+        local next_event = event_router.match_zone(zid)
+        local still_limbus = (next_event == 'limbus')
+        if still_limbus then
+            limbusExitSeenAt = nil
+            return
+        end
     end
     close_active_session('zone_change')
 end)

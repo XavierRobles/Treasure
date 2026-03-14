@@ -1241,6 +1241,11 @@ end
 
 local function pool_item_matches_event(info, event_id, sess)
     local ev = norm(event_id or '')
+    if not (sess and sess.is_event == true) then
+        -- Outside active events (regular zones / lobby), the live treasure pool
+        -- is global and should never be filtered by event tabs.
+        return true
+    end
     local sess_ev = norm((sess and sess.event_id) or '')
     if (sess_ev == 'dynamis' or sess_ev == 'limbus') and ev == sess_ev then
         -- If we're currently inside this event, show the real live pool as-is.

@@ -391,6 +391,39 @@ local function detect_apollyon_profile_from_line(line)
 
     local p = ' ' .. s .. ' '
 
+    if s:find('nw apollyon', 1, true) ~= nil
+            or s:find('apollyon nw', 1, true) ~= nil
+            or s:find('north west apollyon', 1, true) ~= nil
+            or s:find('apollyon north west', 1, true) ~= nil
+            or s:find('northwest apollyon', 1, true) ~= nil
+            or s:find('apollyon northwest', 1, true) ~= nil then
+        return APOLLYON_PROFILES.apollyon_west
+    end
+    if s:find('ne apollyon', 1, true) ~= nil
+            or s:find('apollyon ne', 1, true) ~= nil
+            or s:find('north east apollyon', 1, true) ~= nil
+            or s:find('apollyon north east', 1, true) ~= nil
+            or s:find('northeast apollyon', 1, true) ~= nil
+            or s:find('apollyon northeast', 1, true) ~= nil then
+        return APOLLYON_PROFILES.apollyon_east
+    end
+    if s:find('sw apollyon', 1, true) ~= nil
+            or s:find('apollyon sw', 1, true) ~= nil
+            or s:find('south west apollyon', 1, true) ~= nil
+            or s:find('apollyon south west', 1, true) ~= nil
+            or s:find('southwest apollyon', 1, true) ~= nil
+            or s:find('apollyon southwest', 1, true) ~= nil then
+        return APOLLYON_PROFILES.apollyon_south_west
+    end
+    if s:find('se apollyon', 1, true) ~= nil
+            or s:find('apollyon se', 1, true) ~= nil
+            or s:find('south east apollyon', 1, true) ~= nil
+            or s:find('apollyon south east', 1, true) ~= nil
+            or s:find('southeast apollyon', 1, true) ~= nil
+            or s:find('apollyon southeast', 1, true) ~= nil then
+        return APOLLYON_PROFILES.apollyon_south_east
+    end
+
     if token_find(p, 'central') or token_find(p, 'cs') then
         return APOLLYON_PROFILES.apollyon_central
     end
@@ -669,7 +702,11 @@ local function handle_run_area_line(line, sess)
         local locked_id = tostring(sess.limbus_path_id or '')
         local new_id = tostring(profile.id or '')
         if locked_id ~= '' and new_id ~= '' and locked_id ~= new_id then
-            return false
+            local s = normalize_plain(line)
+            local explicit_enter = (s:find('you have entered', 1, true) ~= nil)
+            if sess.limbus_run_ended ~= true and not explicit_enter then
+                return false
+            end
         end
     end
 
@@ -1050,42 +1087,47 @@ end
 
 local function mark_run_started(sess, with_lock)
     ensure_run_markers(sess)
+    -- Limbus policy: one run per Limbus stay.
+    -- A new run can only start after leaving Apollyon/Temenos.
+    if sess.limbus_run_started == true then
+        if with_lock and sess.limbus_run_ended ~= true then
+            lock_start_participants(sess, true)
+        end
+        return false
+    end
+
     if tostring(sess.limbus_path_id or '') == '' then
         local z_profile = detect_limbus_profile_from_line(tostring(sess.zone_name or ''))
         if z_profile then
             apply_limbus_profile(sess, z_profile)
         end
     end
-    local was_started = (sess.limbus_run_started == true)
     local now = os.time()
-    if not was_started then
-        -- First run signal seen for this zone visit/session.
-        sess.start_time = now
-        sess.drops = core.new_drop_state()
-        sess._filename = nil
-        sess.run_index = nil
-        sess.ended = false
-        sess.limbus_gate_ready = false
-        sess.limbus_gate_ready_until = nil
-        sess.limbus_gate_count = 0
-        sess.limbus_floor = 1
-        sess.limbus_floor_changes = 0
-        sess.limbus_transition_pending = false
-        sess.limbus_transition_pending_at = nil
-        sess.limbus_floor_stats = {}
-        sess.limbus_gunpod = nil
-        clear_sw_day_element(sess)
-    end
+    -- First run signal seen for this zone visit/session.
+    sess.start_time = now
+    sess.drops = core.new_drop_state()
+    sess._filename = nil
+    sess.run_index = nil
+    sess.ended = false
+    sess.limbus_gate_ready = false
+    sess.limbus_gate_ready_until = nil
+    sess.limbus_gate_count = 0
+    sess.limbus_floor = 1
+    sess.limbus_floor_changes = 0
+    sess.limbus_transition_pending = false
+    sess.limbus_transition_pending_at = nil
+    sess.limbus_floor_stats = {}
+    sess.limbus_gunpod = nil
+    clear_sw_day_element(sess)
+
     sess.limbus_run_started = true
     sess.limbus_run_ended = false
     sess.limbus_run_ended_at = nil
     mark_floor_enter(sess, sess.limbus_floor, now)
-    if not was_started then
-        if is_apollyon_central(sess) then
-            reset_gunpod_state(sess)
-        else
-            sess.limbus_gunpod = nil
-        end
+    if is_apollyon_central(sess) then
+        reset_gunpod_state(sess)
+    else
+        sess.limbus_gunpod = nil
     end
     if with_lock then
         -- The run starts here (vortex message), not when entering Apollyon/Temenos.
@@ -1093,6 +1135,7 @@ local function mark_run_started(sess, with_lock)
         sess.management = {}
         sess.limbus_split = {}
     end
+    return true
 end
 
 local function ensure_timer(sess, base_minutes, activate)
@@ -1175,14 +1218,11 @@ local function handle_timer_line(line, sess)
 
     local l = normalize_chat_line(line)
 
-    -- Ignore generic "Time left: ..." chat lines coming from treasure-pool inspect
-    -- or other addons. They are not reliable Limbus run timer signals.
-    if l:find('time left:', 1, true) ~= nil then
-        return false
-    end
-
     local start_min = l:match('you may stay in limbus for%s+(%d+)%s+minutes?')
     if start_min then
+        if sess.limbus_run_started == true then
+            return true
+        end
         set_start_time(sess, start_min)
         mark_run_started(sess, true)
         store.save(sess)
@@ -1192,6 +1232,9 @@ local function handle_timer_line(line, sess)
     local ext_min = l:match('your stay in limbus has been extended by%s+(%d+)%s+minutes?')
             or l:match('your time in limbus has been extended%s+(%d+)%s+minutes?')
     if ext_min then
+        if sess.limbus_run_started ~= true or sess.limbus_run_ended == true then
+            return true
+        end
         add_extension(sess, ext_min)
         mark_run_started(sess, false)
         store.save(sess)
@@ -1200,6 +1243,9 @@ local function handle_timer_line(line, sess)
 
     local left_min = l:match('you have%s+(%d+)%s+minutes?%s+left%s+in%s+limbus')
     if left_min then
+        if sess.limbus_run_started ~= true or sess.limbus_run_ended == true then
+            return true
+        end
         ensure_timer(sess, nil, true)
         local now = os.time()
         local rem = (tonumber(left_min) or 0) * 60
@@ -1213,8 +1259,9 @@ local function handle_timer_line(line, sess)
     end
 
     -- NOTE:
-    -- Ignore generic lines like "Time left: (0:05:00)" because they also appear
-    -- when inspecting treasure-pool items and would desync the Limbus timer.
+    -- We intentionally ignore generic "Time left: (..)" lines because they can
+    -- collide with non-event recast outputs from other addons/ability helpers.
+    -- Limbus timer is driven by explicit run messages (start/extend/minutes-left/end).
 
     if l:find('you can no longer hear a faint hum', 1, true) then
         ensure_timer(sess, nil, true)
@@ -1298,6 +1345,9 @@ function limbus.on_enter(ctx)
             saved.limbus_run_ended = true
             saved.limbus_run_ended_at = saved.limbus_run_ended_at or end_at
         end
+
+    end
+    if saved then
         saved.ended = false
         saved.is_event = true
         saved.management = saved.management or {}

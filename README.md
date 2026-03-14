@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.7  
+**Version:** 1.0.8  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,32 @@
 ---
 
 ## 📌 Changelog
+### v1.0.8 (English)
+
+- Fixed Limbus route detection so **NW / NE / SW / SE** are matched reliably from entry lines.
+- Temenos route detection remains separated as **West / East / North** plus **Central 1-4**.
+- Fixed route carry-over issues where the previous path could leak into a new run header/floor cap.
+- Updated Limbus run lifecycle: after the run starts, it stays active until you leave **Apollyon/Temenos**.
+- Limbus no longer auto-closes just because timer reached 0 while you are still inside Limbus.
+- Improved Limbus reconnect behavior so a run can resume cleanly after a disconnect while still in-zone.
+- Updated session naming:
+  - **Dynamis** now saves without **Run 1** (one run per day/zone policy).
+  - **Limbus** keeps **Run N** and includes route tags like **Apollyon-SW** / **Temenos-Central2**.
+- Fixed live treasure-pool filtering outside events: opening Limbus view no longer hides normal pool items when returning.
+
+### v1.0.8 (Español)
+
+- Corregida la detección de rutas en Limbus para **NW / NE / SW / SE** al entrar.
+- En Temenos la deteccion se mantiene separada como **West / East / North** y **Central 1-4**.
+- Corregido el arrastre de ruta anterior que podía mostrar cabecera o tope de pisos equivocados.
+- Ajustado el ciclo de run en Limbus: una vez empieza, se mantiene activo hasta salir de **Apollyon/Temenos**.
+- Limbus ya no se cierra automáticamente solo porque el tiempo llegue a 0 si sigues dentro de la zona.
+- Mejorada la reanudación tras desconexión en Limbus mientras sigas dentro del evento.
+- Actualizado el nombre de sesiones:
+  - **Dynamis** ahora guarda sin **Run 1** (política de una run por día/zona).
+  - **Limbus** mantiene **Run N** y añade etiqueta de ruta como **Apollyon-SW** / **Temenos-Central2**.
+- Corregido el filtro del pool vivo fuera de evento: entrar en la vista de Limbus ya no oculta ítems normales al volver.
+
 ### v1.0.7 (English)
 
 - Added a new event: **Limbus**.

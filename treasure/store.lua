@@ -36,6 +36,21 @@ local zone_tag = {
     [294] = 'Sandy[D]', [295] = 'Bastok[D]', [296] = 'Windy[D]', [297] = 'Jeuno[D]',
 }
 
+local LIMBUS_PATH_FILE_TAG = {
+    apollyon_west = 'Apollyon-NW',
+    apollyon_east = 'Apollyon-NE',
+    apollyon_south_west = 'Apollyon-SW',
+    apollyon_south_east = 'Apollyon-SE',
+    apollyon_central = 'Apollyon-Central',
+    temenos_west = 'Temenos-West',
+    temenos_east = 'Temenos-East',
+    temenos_north = 'Temenos-North',
+    temenos_central_1 = 'Temenos-Central1',
+    temenos_central_2 = 'Temenos-Central2',
+    temenos_central_3 = 'Temenos-Central3',
+    temenos_central_4 = 'Temenos-Central4',
+}
+
 local function ztag(zid)
     if zone_tag[zid] then
         return zone_tag[zid]
@@ -85,13 +100,22 @@ local function event_prefix(event_id)
     return title_case(id)
 end
 
-local function fname(event_id, zid, ts, pname, run_index)
+local function fname(event_id, zid, ts, pname, run_index, zone_override)
+    local ev_id = normalize_event_id(event_id)
+    local zone_name = tostring(zone_override or '')
+    if zone_name == '' then
+        zone_name = ztag(zid)
+    end
+    if ev_id == 'dynamis' then
+        return ('%s - %s - %s - %s.lua')
+                :format(event_prefix(ev_id), zone_name, os.date('%Y-%m-%d', ts), pname)
+    end
     local run = tonumber(run_index) or 1
     if run < 1 then
         run = 1
     end
     return ('%s - %s - %s - Run %d - %s.lua')
-            :format(event_prefix(event_id), ztag(zid), os.date('%Y-%m-%d', ts), run, pname)
+            :format(event_prefix(ev_id), zone_name, os.date('%Y-%m-%d', ts), run, pname)
 end
 
 local function esc_lua_pattern(s)
@@ -108,6 +132,7 @@ local function parse_filename_meta(filename)
             zone_tag = zone,
             date = date,
             run_index = tonumber(run) or 1,
+            has_run = true,
             player = player,
         }
     end
@@ -120,6 +145,7 @@ local function parse_filename_meta(filename)
             zone_tag = zone,
             date = date,
             run_index = 1,
+            has_run = false,
             player = player,
         }
     end
@@ -163,24 +189,45 @@ local function matching_run_files(event_id, zid, pname, day)
             local meta = parse_filename_meta(file)
             if meta and meta.date == day and meta.player == pname then
                 local zone_ok = (meta.zone_tag == tag1) or (meta.zone_tag == tag2)
+                if (not zone_ok) and event_id == 'limbus' then
+                    local mz = tostring(meta.zone_tag or '')
+                    if (tag1 ~= '' and mz:sub(1, #tag1 + 1) == (tag1 .. '-'))
+                            or (tag2 ~= '' and mz:sub(1, #tag2 + 1) == (tag2 .. '-')) then
+                        zone_ok = true
+                    end
+                end
                 if zone_ok then
                     out[#out + 1] = {
                         name = file,
                         run_index = tonumber(meta.run_index) or 1,
+                        has_run = (meta.has_run == true),
                     }
                 end
             end
         end
     end
 
-    table.sort(out, function(a, b)
-        local ra = tonumber(a.run_index) or 1
-        local rb = tonumber(b.run_index) or 1
-        if ra ~= rb then
-            return ra > rb
-        end
-        return tostring(a.name) > tostring(b.name)
-    end)
+    local ev_id = normalize_event_id(event_id)
+    if ev_id == 'dynamis' then
+        table.sort(out, function(a, b)
+            local ar = (a.has_run == true)
+            local br = (b.has_run == true)
+            if ar ~= br then
+                -- Prefer canonical Dynamis filenames without "Run N".
+                return (not ar) and br
+            end
+            return tostring(a.name) > tostring(b.name)
+        end)
+    else
+        table.sort(out, function(a, b)
+            local ra = tonumber(a.run_index) or 1
+            local rb = tonumber(b.run_index) or 1
+            if ra ~= rb then
+                return ra > rb
+            end
+            return tostring(a.name) > tostring(b.name)
+        end)
+    end
 
     return out
 end
@@ -245,11 +292,16 @@ function store.save(sess, opts)
     end
     sess.player_name = pname
 
+    local ev_id = normalize_event_id(sess.event_id or event_id_opt)
     local filename
-    if sess._filename and sess._filename ~= '' then
+    if ev_id == 'dynamis' then
+        -- Policy: one Dynamis file per day and zone; no Run suffix.
+        sess.run_index = 1
+        filename = fname(ev_id, sess.zone_id, tonumber(sess.start_time) or os.time(), pname, 1)
+        sess._filename = filename
+    elseif sess._filename and sess._filename ~= '' then
         filename = sess._filename
     else
-        local ev_id = normalize_event_id(sess.event_id or event_id_opt)
         local day = os.date('%Y-%m-%d', tonumber(sess.start_time) or os.time())
         local run_idx = tonumber(sess.run_index)
         if not run_idx or run_idx < 1 then
@@ -264,7 +316,15 @@ function store.save(sess, opts)
             end
             sess.run_index = run_idx
         end
-        filename = fname(ev_id, sess.zone_id, sess.start_time, pname, run_idx)
+        local zone_part = nil
+        if ev_id == 'limbus' then
+            local pid = tostring(sess.limbus_path_id or '')
+            local mapped = LIMBUS_PATH_FILE_TAG[pid]
+            if mapped and mapped ~= '' then
+                zone_part = mapped
+            end
+        end
+        filename = fname(ev_id, sess.zone_id, sess.start_time, pname, run_idx, zone_part)
         sess._filename = filename
     end
 
@@ -327,7 +387,13 @@ function store.load(zid, opts)
         local fullpath = root .. cand.name
         local ok, sess = pcall(dofile, fullpath)
         if ok and type(sess) == 'table' then
-            if (not only_active) or (sess.ended ~= true) then
+            local can_use = ((not only_active) or (sess.ended ~= true))
+            if only_active and ev_id == 'dynamis' then
+                -- Policy: always resume today's Dynamis file for this zone/player.
+                can_use = true
+            end
+
+            if can_use then
                 sess._filename = cand.name
 
                 if not sess.event_id or sess.event_id == '' then
