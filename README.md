@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.8  
+**Version:** 1.0.9  
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,67 @@
 ---
 
 ## 📌 Changelog
+### v1.0.9 (English)
+
+- Added a new **Weekly** section to track weekly/twice-weekly content alongside Dynamis and Limbus.
+- Added a third **Weekly** chip in compact mode next to **Dynamis** and **Limbus**.
+- Added **Eco-Warrior** tracker:
+  - Auto-detects accepted/active/completed quests for **San d'Oria / Windurst / Bastok** from in-game dialogue.
+  - Detects phases automatically (accepted, field NPC started, NM ready, key item obtained, reward ready, completed, blocked).
+  - Detects Eeko-Weeko cycle sync messages to keep the weekly cycle in line with the server state.
+  - Weekly reset is computed on **Sunday 00:00 JST**; cycle progress is preserved across weekly resets.
+  - Shows the **city start NPC** for each nation (Norejaie / Lumomo / Raifa) in the status table.
+- Added **Highwind** weekly NM tracker:
+  - Detects kills via the in-game defeat message combined with the local player's own XP gain within 5 seconds (double check, so spectating the kill from outside does not count).
+  - Shows a live **alive / dead** icon next to the status panel.
+  - Per-character weekly state with reset at **Sunday 00:00 JST**.
+- Added a dedicated **Options** tab inside Weekly with all manual overrides (mark/undo, reset week/cycle/all, clear trigger log).
+- Added new commands:
+  - `/tr ew [show|set|done|undo|phase|reset week|reset cycle|reset all]` for Eco-Warrior.
+  - `/tr hw [show|mark|undo|reset week|reset all]` for Highwind.
+- Added a parallel **weekly router** and per-character storage under `weekly\ecowar.lua` and `weekly\highwind.lua`.
+- Added a new **Quests** weekly tracker with auto-detection for **Spice Gals**, **Uninvited Guests** and **Secrets of Ovens Lost**:
+  - Per-character state machine: *available → started → has key item → reward blocked (inventory full) → completed this week*.
+  - Random-reward quests (Uninvited Guests) are confirmed by the NPC reward dialogue itself, not by a fixed obtained item.
+  - Shared rewards like **Page from Miratete's Memoirs** are routed to the correct quest via a pending hand-in window, avoiding cross-quest false positives.
+  - `Achievement Unlocked` is only used as a secondary trigger, never as the primary confirmation.
+  - Weekly reset aligned with the rest of the Weekly trackers (**Sunday 00:00 JST**).
+  - New **Quests** tab in full mode plus a `N/3 done` line in compact mode, with manual mark/undo/reset controls in the Options tab.
+  - Per-character storage at `weekly\quests.lua`; the in-file catalog is open so adding new quests/missions/ENM requires no UI or router changes.
+- Fixed **Eco-Warrior** reward detection: the tracker no longer marks a nation as completed when the NPC offers the reward but the player has full inventory or already owns the item. Completion now requires the real **Page from the Dragon Chronicles** + **Tale of the Wandering Heroes** drops to land.
+- Fixed an ImGui tab-state issue where opening Limbus from compact and going back could leave the live treasure pool blank.
+
+### v1.0.9 (Español)
+
+- Añadida una nueva sección **Weekly** para llevar contenido semanal/dos veces por semana junto a Dynamis y Limbus.
+- Añadido un tercer chip **Weekly** en modo compacto, junto a **Dynamis** y **Limbus**.
+- Añadido tracker de **Eco-Warrior**:
+  - Detecta automáticamente quest aceptada/activa/completada para **San d'Oria / Windurst / Bastok** a partir de los diálogos del juego.
+  - Detecta fases automáticamente (aceptada, NPC de campo iniciado, NM listo, key item obtenido, recompensa lista, completada, bloqueada).
+  - Detecta mensajes de Eeko-Weeko para sincronizar el ciclo semanal con el estado del servidor.
+  - El reset semanal se calcula con **Domingo 00:00 JST**; el progreso del ciclo se mantiene entre resets.
+  - Muestra en la tabla de estado el **NPC de ciudad** donde se inicia la misión (Norejaie / Lumomo / Raifa).
+- Añadido tracker semanal de NM **Highwind**:
+  - Detecta los kills combinando el mensaje de derrota del juego con la propia ganancia de XP del jugador local en menos de 5 segundos (doble check, para que verlo morir sin participar no cuente).
+  - Muestra un icono **vivo / muerto** en vivo al lado del panel de estado.
+  - Estado semanal por personaje con reset en **Domingo 00:00 JST**.
+- Añadida una pestaña **Options** dentro de Weekly con todos los manual overrides (mark/undo, reset week/cycle/all, limpiar log de triggers).
+- Añadidos nuevos comandos:
+  - `/tr ew [show|set|done|undo|phase|reset week|reset cycle|reset all]` para Eco-Warrior.
+  - `/tr hw [show|mark|undo|reset week|reset all]` para Highwind.
+- Añadido un **weekly router** paralelo y almacenamiento por personaje en `weekly\ecowar.lua` y `weekly\highwind.lua`.
+- Añadido un nuevo tracker semanal de **Quests** con detección automática para **Spice Gals**, **Uninvited Guests** y **Secrets of Ovens Lost**:
+  - Máquina de estados por personaje: *available → started → has key item → reward blocked (inventario lleno) → completed this week*.
+  - Las quests con recompensa aleatoria (Uninvited Guests) se confirman por el propio diálogo de entrega del NPC, no por un drop fijo.
+  - Las recompensas compartidas como **Page from Miratete's Memoirs** se asignan a la quest correcta mediante una ventana de hand-in pendiente, evitando falsos positivos entre quests.
+  - `Achievement Unlocked` solo se usa como trigger secundario, nunca como confirmación principal.
+  - Reset semanal alineado con el resto de Weekly trackers (**Domingo 00:00 JST**).
+  - Nueva pestaña **Quests** en modo full y resumen `N/3 done` en modo compacto, con controles manuales de mark/undo/reset en la pestaña Options.
+  - Almacenamiento por personaje en `weekly\quests.lua`; el catálogo del propio archivo es abierto, por lo que añadir nuevas quests/misiones/ENM no requiere cambios en UI ni router.
+- Corregida la detección de cierre de **Eco-Warrior**: ya no se marca una nación como completada cuando el NPC ofrece la recompensa pero el inventario está lleno o ya posees el ítem. La completación ahora exige que lleguen de verdad los drops **Page from the Dragon Chronicles** + **Tale of the Wandering Heroes**.
+- Corregido un problema de estado de pestañas ImGui por el que entrar a Limbus desde compacto y volver podía dejar el pool en vivo en blanco.
+
+---
 ### v1.0.8 (English)
 
 - Fixed Limbus route detection so **NW / NE / SW / SE** are matched reliably from entry lines.

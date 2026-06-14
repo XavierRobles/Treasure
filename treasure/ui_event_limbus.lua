@@ -490,7 +490,8 @@ function ui_limbus.render(ctx)
         imgui.Separator()
     end
 
-    if imgui.BeginTabBar('##edtabs') then
+    local tab_bar_id = ui.compact and '##edtabs_compact' or '##edtabs_limbus_full'
+    if imgui.BeginTabBar(tab_bar_id) then
         if ui.compact then
             if imgui.BeginTabItem('Treasure') then
                 draw_treasure_table(sess, C, cfg, 'limbus')

@@ -85,7 +85,8 @@ function dynamis.render(ctx)
         return item_matches_event(name, 'dynamis')
     end
 
-if imgui.BeginTabBar('##edtabs') then
+local tab_bar_id = ui.compact and '##edtabs_compact' or '##edtabs_dynamis_full'
+    if imgui.BeginTabBar(tab_bar_id) then
         ----------------------------------------------------------------
         -- COMPACT ----------------------------------------------------
         ----------------------------------------------------------------

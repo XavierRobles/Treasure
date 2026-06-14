@@ -106,6 +106,7 @@ local THEMES_OK, ADDON_THEMES = pcall(require, 'ev_themes')  -- palette file
 local store = require('store')
 local timeutil = require('timeutil')
 local event_router = require('ui_event_router')
+local ui_weekly = require('ui_weekly')
 -------------------------------------------------------------------------------
 
 --------------------------------------------------------------------
@@ -1433,6 +1434,20 @@ local function ensure_gate_icons_loaded()
         '\\addons\\treasure\\icons\\ultima.jpg',
         '\\addons\\treasure\\icons\\Ultima.jpg',
     })
+    GATE_ICONS.highwind = {
+        dead = load_first({
+            '\\addons\\treasure\\icons\\highwind\\1hw.png',
+            '\\addons\\treasure\\icons\\highwind\\1hw.PNG',
+        }),
+        alive = load_first({
+            '\\addons\\treasure\\icons\\highwind\\highwind6.png',
+            '\\addons\\treasure\\icons\\highwind\\highwind6.PNG',
+            '\\addons\\treasure\\icons\\highwind\\highwind6.webp',
+            '\\addons\\treasure\\icons\\highwind\\6hw.png',
+            '\\addons\\treasure\\icons\\highwind\\6hw.PNG',
+            '\\addons\\treasure\\icons\\highwind\\5hw.png',
+        }),
+    }
     GATE_ICONS.status_ok = load_first({
         '\\addons\\treasure\\icons\\ok.png',
         '\\addons\\treasure\\icons\\OK.png',
@@ -1740,6 +1755,30 @@ local function draw_keyitem_status_icon(has_item, size, tint_ok, tint_x)
     return true
 end
 
+local function draw_highwind_icon(is_alive, size, tint)
+    ensure_gate_icons_loaded()
+    if not FFI_OK then
+        return false
+    end
+
+    local pair = GATE_ICONS.highwind
+    if not pair then return false end
+    local tex = (is_alive == true) and pair.alive or pair.dead
+    if tex == nil then return false end
+
+    local ptr = tonumber(ffi.cast('uint32_t', tex))
+    if not ptr or ptr == 0 then
+        return false
+    end
+
+    local icon_size = tonumber(size) or 28
+    if icon_size < 12 then
+        icon_size = 12
+    end
+    imgui.Image(ptr, { icon_size, icon_size }, { 0, 0 }, { 1, 1 }, tint or ICON_TINT_WHITE, { 0, 0, 0, 0 })
+    return true
+end
+
 local function draw_tooltip_icon(kind, key, size, tint)
     ensure_gate_icons_loaded()
     if not FFI_OK then
@@ -1980,6 +2019,7 @@ ui._limbus_sw_element_key = limbus_sw_element_key
 ui._draw_element_icon = draw_element_icon
 ui._draw_ultima_icon = draw_ultima_icon
 ui._draw_keyitem_status_icon = draw_keyitem_status_icon
+ui._draw_highwind_icon = draw_highwind_icon
 
 
 
@@ -3271,7 +3311,9 @@ function ui.render(sess, cfg)
                 if clicked then
                     ui.selected_event = id
                     ui.selected_event_user = true
-                    event_router.set_active(ui, id)
+                    if id ~= 'weekly' then
+                        event_router.set_active(ui, id)
+                    end
 
                     -- Compact => Full using selected event.
                     save_layout(cfg, mode, root_window)
@@ -3561,13 +3603,15 @@ function ui.render(sess, cfg)
             end
             local avail_w = tonumber(avail_x) or 0
             local gap = spacing
-            local chip_w = math.floor((avail_w - gap) / 2)
-            if chip_w < 110 then
-                chip_w = 110
+            local chip_w = math.floor((avail_w - (gap * 2)) / 3)
+            if chip_w < 80 then
+                chip_w = 80
             end
             draw_event_chip('dynamis', 'Dynamis', chip_w)
             imgui.SameLine(0, gap)
             draw_event_chip('limbus', 'Limbus', chip_w)
+            imgui.SameLine(0, gap)
+            draw_event_chip('weekly', 'Weekly', chip_w)
         end
     end
 
@@ -3818,7 +3862,11 @@ function ui.render(sess, cfg)
     local event_ctx = build_event_context(sess, cfg)
 
     local tab_style_colors, tab_style_vars = push_tabs_style(event_ctx.event_id, cfg, C)
-    event_router.render(ui, event_ctx)
+    if event_ctx.event_id == 'weekly' then
+        ui_weekly.render(event_ctx)
+    else
+        event_router.render(ui, event_ctx)
+    end
     if tab_style_vars and tab_style_vars > 0 then
         imgui.PopStyleVar(tab_style_vars)
     end

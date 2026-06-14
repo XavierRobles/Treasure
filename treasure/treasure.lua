@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.8'
+addon.version = '1.0.9'
 
 require('common')
 local core = require('core')
@@ -18,6 +18,9 @@ local parser = require('parser')
 local store = require('store')
 local ui = require('ui')
 local event_router = require('event_router')
+local weekly_router = require('weekly_router')
+local ecowar = require('weekly.ecowar')
+local highwind = require('weekly.highwind')
 local timeutil = require('timeutil')
 local fs = ashita.fs
 local chat = require('chat')
@@ -63,6 +66,7 @@ local DOT_HUGE_OPEN = string.char(0x81, 0x9B) -- ○
 local DOT_SMALL    = string.char(0x81, 0x45) -- ・
 ------------------------------------------------------------------ estado
 local session, idle_session, lastPool, lastSave = nil, nil, 0, 0
+local lastWeeklyTick = 0
 local cfg, lastPrefSave = nil, 0
 local lastLimbusPoolProbe = 0
 local limbusExitSeenAt = nil
@@ -647,6 +651,7 @@ local function ensure_settings()
     cfg._config_file = cfg_file
     cfg.default_mode = cfg.default_mode or 'compact'
     ui.compact = (cfg.default_mode ~= 'full')
+    weekly_router.init_all(pname, char_dir)
     return cfg
 end
 
@@ -935,6 +940,108 @@ ashita.events.register('command', 'treasure_cmd', function(e)
         return
     end
 
+    -- /tr ew ...  -> Eco-Warrior weekly tracker
+    if sub == 'ew' or sub == 'ecowar' or sub == 'eco' then
+        local function print_summary()
+            print_local(ecowar.get_summary())
+            print_local(ecowar.get_next_step())
+            local ew_next = ecowar.next_reset_timestamp()
+            print_local(('Next reset: %s local (%s)'):format(ecowar.format_local(ew_next), ecowar.format_jst(ew_next)))
+        end
+
+        local action = (args[3] or ''):lower()
+        local target = (args[4] or ''):lower()
+
+        if action == '' or action == 'show' or action == 'status' then
+            print_summary()
+            return
+        end
+        if action == 'set' or action == 'active' then
+            local ok, err = ecowar.set_active(target ~= '' and target or 'none')
+            if not ok then print_local('Eco-War: ' .. tostring(err or 'failed')) end
+            print_summary()
+            return
+        end
+        if action == 'done' or action == 'mark' then
+            local ok, err = ecowar.mark_done(target)
+            if not ok then print_local('Eco-War: ' .. tostring(err or 'failed')) end
+            print_summary()
+            return
+        end
+        if action == 'undo' then
+            local ok, err = ecowar.undo(target)
+            if not ok then print_local('Eco-War: ' .. tostring(err or 'failed')) end
+            print_summary()
+            return
+        end
+        if action == 'phase' then
+            local ok, err = ecowar.set_phase(target)
+            if not ok then print_local('Eco-War: ' .. tostring(err or 'failed')) end
+            print_summary()
+            return
+        end
+        if action == 'reset' then
+            if target == 'week' then
+                ecowar.reset_week()
+            elseif target == 'cycle' then
+                ecowar.reset_cycle()
+            elseif target == 'all' then
+                ecowar.reset_all()
+            else
+                print_local('Eco-War: usage /tr ew reset <week|cycle|all>')
+                return
+            end
+            print_summary()
+            return
+        end
+        print_local('Eco-War: unknown action "' .. tostring(action) .. '"')
+        return
+    end
+
+    -- /tr hw ...  -> Highwind weekly tracker
+    if sub == 'hw' or sub == 'highwind' then
+        local function print_summary()
+            print_local(highwind.get_summary())
+            print_local(highwind.get_next_step())
+            local hw_next = highwind.next_reset_timestamp()
+            print_local(('Next reset: %s local (%s)'):format(highwind.format_local(hw_next), highwind.format_jst(hw_next)))
+        end
+
+        local action = (args[3] or ''):lower()
+
+        if action == '' or action == 'show' or action == 'status' then
+            print_summary()
+            return
+        end
+        if action == 'mark' or action == 'done' or action == 'killed' then
+            local ok, err = highwind.mark_killed()
+            if not ok then print_local('Highwind: ' .. tostring(err or 'failed')) end
+            print_summary()
+            return
+        end
+        if action == 'undo' then
+            local ok, err = highwind.undo()
+            if not ok then print_local('Highwind: ' .. tostring(err or 'failed')) end
+            print_summary()
+            return
+        end
+        if action == 'reset' then
+            local target = (args[4] or 'week'):lower()
+            if target == 'week' then
+                highwind.reset_week()
+            elseif target == 'all' then
+                highwind.reset_all()
+            else
+                print_local('Highwind: usage /tr hw reset <week|all>')
+                return
+            end
+            print_summary()
+            return
+        end
+        print_local('Highwind: unknown action "' .. tostring(action) .. '"')
+        return
+    end
+
     -- fallback: keep toggle behavior if unknown subcommand
     if not cfg then
         cfg = ensure_settings()
@@ -1079,6 +1186,12 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         lastPartyUpdate = now_tick
     end
 
+    -- Weekly trackers tick (JST roll-over). Cheap; every ~5s is plenty.
+    if (now_tick - lastWeeklyTick) > 5.0 then
+        weekly_router.tick()
+        lastWeeklyTick = now_tick
+    end
+
     process_party_chat_queue()
     ensure_menu_hide_cfg(cfg)
     local hide_ui = (cfg.menu_hide.hide_when_ui_hidden ~= false) and is_ui_fully_hidden()
@@ -1127,6 +1240,7 @@ end)
 
 ------------------------------------------------------------------ texto chat
 ashita.events.register('text_in', 'treasure_text', function(e)
+    weekly_router.on_text(e.message_modified)
     if session and session.is_event then
         local ev_id = session_event_id(session)
         local handler = event_router.get(ev_id)
