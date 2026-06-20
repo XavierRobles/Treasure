@@ -16,34 +16,57 @@ local MAX_MESSAGES = 6
 local MAX_BUFFER = 12
 local DEBOUNCE_SECONDS = 3
 local HANDIN_WINDOW = 20
+local DAY_SECONDS = 86400
 
 -- Quest catalog. Add new entries here and the router/UI pick them up.
 --
 -- Trigger fields are lowercased substrings matched against a normalized chat
 -- buffer (see normalize_text). `instant_complete = true` finalizes on handin
 -- without waiting for a fixed Obtained line (used for random-reward quests).
+-- `flow` separates access-permit, collect-and-deliver KI, and KI cooldown content.
 local CATALOG = {
     {
         id = 'spice_gals',
         label = 'Spice Gals',
+        flow = 'ki_delivery',
         npc = 'Rouva',
         zone_hint = "Southern San d'Oria",
-        start_phrases = {},
+        zone_started = 'Riverne - Site #B01',
+        zone_has_key_item = "Southern San d'Oria",
+        start_phrases = {
+            'thanks to your unselfish act of kindness',
+            'collect another sprig of rivernewort',
+            'if, by some wonderful miracle, you find yourself in possession of a sprig of rivernewort',
+            'prepare lady femitte some authentic tavnazian dishes once again',
+        },
         ki_phrases = { 'obtained key item: rivernewort' },
-        handin_phrases = { 'may the goddess have mercy on young despachiaire' },
+        handin_phrases = {
+            'why, this is rivernewort',
+            'garnish my dishes with this succulent spice',
+        },
         success_phrases = { "obtained: page from miratete's memoirs" },
         block_phrases = { 'come back after sorting your inventory', 'cannot obtain the page' },
         achievement_phrase = "achievement unlocked: complete 'spice gals'",
         instant_complete = false,
+        next_available = 'Talk to Rouva to start.',
+        next_started = 'Obtain key item: Rivernewort.',
+        next_has_key_item = 'Return to Rouva and deliver Rivernewort.',
+        next_blocked = 'Free inventory, then talk to Rouva again.',
     },
     {
         id = 'uninvited_guests',
         label = 'Uninvited Guests',
+        flow = 'access_permit',
         npc = 'Justinius',
         zone_hint = 'Tavnazian Safehold',
-        start_phrases = {},
+        zone_has_key_item = 'Monarch Linn',
+        start_phrases = {
+            'do you remember those black-robed intruders',
+            'excellent. take this and make your way to monarch linn',
+        },
         ki_phrases = { 'obtained key item: monarch linn patrol permit' },
         handin_phrases = {
+            'so, you have routed those black-robed menaces from monarch linn',
             'your reward--for a job well done',
             'you deserve something for putting your neck on the line',
         },
@@ -51,14 +74,23 @@ local CATALOG = {
         block_phrases = { 'come back after sorting your inventory' },
         achievement_phrase = "achievement unlocked: complete 'uninvited guests'",
         instant_complete = true,
+        next_available = 'Talk to Justinius to accept.',
+        next_started = 'Get Monarch Linn Patrol Permit from Justinius.',
+        next_has_key_item = 'Use the permit at Monarch Linn and route the intruders.',
+        next_blocked = 'Free inventory, then talk to Justinius again.',
+        has_key_item_label = 'Ready to fight',
     },
     {
         id = 'secrets_of_ovens_lost',
         label = 'Secrets of Ovens Lost',
+        flow = 'ki_delivery',
         npc = 'Jonette',
         zone_hint = 'Tavnazian Safehold',
+        zone_started = 'Sacrarium / Phomiuna Aqueducts',
+        zone_has_key_item = 'Tavnazian Safehold',
         start_phrases = {
-            'i would be so grateful...as would all the other safehold residents',
+            'the information you have brought me on tavnazian cuisine',
+            'if you happen to find any more, the children would be so delighted',
         },
         ki_phrases = { 'obtained key item: tavnazian cookbook' },
         handin_phrases = {
@@ -72,6 +104,34 @@ local CATALOG = {
         },
         achievement_phrase = "achievement unlocked: complete 'secrets of ovens lost'",
         instant_complete = false,
+        next_available = 'Talk to Jonette to start.',
+        next_started = 'Find Tavnazian cookbook in Sacrarium or Phomiuna Aqueducts.',
+        next_has_key_item = 'Return to Jonette and deliver the cookbook.',
+        next_blocked = 'Free inventory, then talk to Jonette again.',
+    },
+    {
+        id = 'monarch_linn_enm',
+        label = 'Monarch Linn ENM',
+        flow = 'ki_cooldown',
+        npc = 'Morangeart',
+        zone_hint = 'Tavnazian Safehold G-10',
+        zone_cooldown = 'Monarch Linn',
+        zone_has_key_item_available = 'Monarch Linn / Tavnazian Safehold',
+        start_phrases = {},
+        ki_phrases = { 'obtained key item: monarch beard' },
+        lost_ki_phrases = { 'lost key item: monarch beard' },
+        handin_phrases = {},
+        success_phrases = {},
+        block_phrases = {},
+        achievement_phrase = nil,
+        instant_complete = false,
+        cooldown_days = 5,
+        next_available = 'Talk to Morangeart and obtain Monarch Beard.',
+        next_cooldown = 'Use at Monarch Linn.',
+        next_cooldown_no_ki = 'Wait, then talk to Morangeart.',
+        next_has_key_item_available = 'Use held beard or pick another after spending it.',
+        cooldown_label = 'Has KI',
+        ready_with_ki_label = 'Has KI +1',
     },
 }
 
@@ -86,6 +146,9 @@ local STATES = {
     available = true,
     started = true,
     has_key_item = true,
+    has_key_item_available = true,
+    cooldown_no_ki = true,
+    cooldown = true,
     reward_blocked_inventory = true,
     completed_this_week = true,
 }
@@ -97,7 +160,10 @@ local STATE_RANK = {
     available = 0,
     started = 1,
     has_key_item = 2,
+    has_key_item_available = 3,
+    cooldown_no_ki = 3,
     reward_blocked_inventory = 3,
+    cooldown = 4,
     completed_this_week = 4,
 }
 
@@ -105,6 +171,9 @@ local STATE_LABEL = {
     available = 'Available',
     started = 'Started',
     has_key_item = 'Has KI',
+    has_key_item_available = 'Has KI + Ready',
+    cooldown_no_ki = 'Cooldown',
+    cooldown = 'Cooldown',
     reward_blocked_inventory = 'Inventory full',
     completed_this_week = 'Done',
 }
@@ -167,6 +236,8 @@ local function default_quest_state()
         state = 'available',
         completed_this_week = false,
         last_completed = nil,
+        obtained_at = nil,
+        available_at = nil,
     }
 end
 
@@ -200,6 +271,8 @@ local function normalize_loaded(loaded)
         else
             if STATES[q.state] ~= true then q.state = 'available' end
             if q.completed_this_week == nil then q.completed_this_week = false end
+            if q.obtained_at == nil then q.obtained_at = nil end
+            if q.available_at == nil then q.available_at = nil end
         end
     end
     loaded.server = SERVER_NAME
@@ -231,6 +304,22 @@ function quests.format_jst(ts)
     return ('%04d-%02d-%02d %02d:%02d JST'):format(jst.year, jst.month, jst.day, jst.hour, jst.min)
 end
 
+function quests.format_local(ts)
+    local lt = os.date('*t', ts or os.time())
+    return ('%04d-%02d-%02d %02d:%02d'):format(lt.year, lt.month, lt.day, lt.hour, lt.min)
+end
+
+function quests.format_remaining(ts)
+    local rem = math.max(0, (ts or os.time()) - os.time())
+    local d = math.floor(rem / DAY_SECONDS)
+    local h = math.floor((rem - d * DAY_SECONDS) / 3600)
+    local m = math.floor((rem - d * DAY_SECONDS - h * 3600) / 60)
+    if d > 0 then
+        return ('%dd %02dh %02dm'):format(d, h, m)
+    end
+    return ('%02dh %02dm'):format(h, m)
+end
+
 function quests.next_reset_timestamp(ts)
     return next_reset_timestamp(ts)
 end
@@ -258,9 +347,13 @@ local function roll_week_if_needed()
         state.lastKnownWeekId = wid
         for _, qdef in ipairs(CATALOG) do
             local q = state.quests[qdef.id] or default_quest_state()
-            q.completed_this_week = false
-            q.state = 'available'
-            q.last_completed = nil
+            if qdef.flow ~= 'ki_cooldown' then
+                q.completed_this_week = false
+                q.state = 'available'
+                q.last_completed = nil
+                q.obtained_at = nil
+                q.available_at = nil
+            end
             state.quests[qdef.id] = q
         end
         pending_handin = {}
@@ -273,6 +366,76 @@ function quests.get_state() return state end
 function quests.catalog() return CATALOG end
 function quests.state_label(s) return STATE_LABEL[s] or tostring(s or '?') end
 
+function quests.quest_state_label(qdef, s, q)
+    if type(qdef) == 'table' and s == 'cooldown' and qdef.cooldown_label then
+        return qdef.cooldown_label
+    end
+    if type(qdef) == 'table' and s == 'cooldown_no_ki' then
+        if type(q) == 'table' and q.available_at then
+            return quests.format_remaining(q.available_at)
+        end
+        return qdef.cooldown_no_ki_label or quests.state_label(s)
+    end
+    if type(qdef) == 'table' and s == 'has_key_item_available' and qdef.ready_with_ki_label then
+        return qdef.ready_with_ki_label
+    end
+    if type(qdef) == 'table' and s == 'has_key_item' and qdef.has_key_item_label then
+        return qdef.has_key_item_label
+    end
+    return quests.state_label(s)
+end
+
+function quests.get_quest_zone_hint(quest_id)
+    local qdef = CATALOG_BY_ID[quest_id]
+    local q = quests.get_quest_state(quest_id)
+    if not qdef or not q then return '' end
+    if q.state == 'cooldown' or q.state == 'cooldown_no_ki' then return qdef.zone_cooldown or qdef.zone_hint or '' end
+    if q.state == 'has_key_item_available' then return qdef.zone_has_key_item_available or qdef.zone_cooldown or qdef.zone_hint or '' end
+    if q.state == 'has_key_item' then return qdef.zone_has_key_item or qdef.zone_hint or '' end
+    if q.state == 'started' then return qdef.zone_started or qdef.zone_hint or '' end
+    return qdef.zone_hint or ''
+end
+
+function quests.get_quest_next_step(quest_id)
+    local qdef = CATALOG_BY_ID[quest_id]
+    local q = quests.get_quest_state(quest_id)
+    if not qdef or not q then return '' end
+    if q.state == 'cooldown' then
+        if q.available_at then
+            return ('Next beard: %s. Available: %s local (%s). %s'):format(
+                    quests.format_remaining(q.available_at),
+                    quests.format_local(q.available_at),
+                    quests.format_jst(q.available_at),
+                    qdef.next_cooldown or 'On cooldown.')
+        end
+        return qdef.next_cooldown or 'On cooldown.'
+    end
+    if q.state == 'cooldown_no_ki' then
+        if q.available_at then
+            return ('Next beard: %s. Available: %s local (%s). %s'):format(
+                    quests.format_remaining(q.available_at),
+                    quests.format_local(q.available_at),
+                    quests.format_jst(q.available_at),
+                    qdef.next_cooldown_no_ki or 'On cooldown.')
+        end
+        return qdef.next_cooldown_no_ki or 'On cooldown.'
+    end
+    if q.state == 'has_key_item_available' then
+        return qdef.next_has_key_item_available or 'Has KI and cooldown is ready.'
+    end
+    if q.state == 'completed_this_week' then
+        local reset_at = next_reset_timestamp()
+        return ('Done. Reset: %s. Available: %s local (%s).'):format(
+                quests.format_remaining(reset_at),
+                quests.format_local(reset_at),
+                quests.format_jst(reset_at))
+    end
+    if q.state == 'reward_blocked_inventory' then return qdef.next_blocked or 'Free inventory, then claim the reward again.' end
+    if q.state == 'has_key_item' then return qdef.next_has_key_item or 'Return to the NPC and complete the quest.' end
+    if q.state == 'started' then return qdef.next_started or 'Continue the quest objective.' end
+    return qdef.next_available or 'Talk to the NPC to start.'
+end
+
 function quests.get_quest_state(quest_id)
     if not state then return nil end
     return state.quests[quest_id]
@@ -280,12 +443,18 @@ end
 
 function quests.get_summary()
     if not state then return '' end
-    local done, total = 0, #CATALOG
+    local done, active, total = 0, 0, #CATALOG
     for _, qdef in ipairs(CATALOG) do
         local q = state.quests[qdef.id]
-        if q and q.completed_this_week then done = done + 1 end
+        if q then
+            if q.completed_this_week then
+                done = done + 1
+            elseif q.state ~= 'available' then
+                active = active + 1
+            end
+        end
     end
-    return ('Quests: %d/%d done'):format(done, total)
+    return ('Quests/ENM: %d/%d done | %d active'):format(done, total, active)
 end
 
 local function normalize_text(s)
@@ -361,11 +530,74 @@ local function finalize_block(quest_id, qdef)
     push_message(('%s reward blocked (inventory full).'):format(qdef.label))
 end
 
+local function set_cooldown(quest_id, qdef)
+    local q = state.quests[quest_id]
+    if not q then return false end
+    local now = os.time()
+    local days = tonumber(qdef.cooldown_days or 0) or 0
+    q.state = 'cooldown'
+    q.completed_this_week = false
+    q.last_completed = nil
+    q.obtained_at = now
+    q.available_at = now + (days * DAY_SECONDS)
+    state.confidence = 'auto'
+    save()
+    push_message(('%s cooldown started. Available after %s local.'):format(
+            qdef.label,
+            quests.format_local(q.available_at)))
+    return true
+end
+
+local function refresh_cooldowns()
+    local changed = false
+    local now = os.time()
+    for _, qdef in ipairs(CATALOG) do
+        if qdef.flow == 'ki_cooldown' then
+            local q = state.quests[qdef.id]
+            if q and q.state == 'cooldown' and q.available_at and now >= q.available_at then
+                q.state = 'has_key_item_available'
+                changed = true
+                push_message(('%s cooldown ended. KI may still be held; next obtain will restart the 5-day timer.'):format(qdef.label))
+            elseif q and q.state == 'cooldown_no_ki' and q.available_at and now >= q.available_at then
+                q.state = 'available'
+                q.obtained_at = nil
+                q.available_at = nil
+                changed = true
+                push_message(('%s is available again.'):format(qdef.label))
+            end
+        end
+    end
+    if changed then
+        state.confidence = 'auto'
+        save()
+    end
+end
+
 local function process_quest(text, qdef)
     local id = qdef.id
     local q = state.quests[id]
     if not q then return false end
     if q.state == 'completed_this_week' then return false end
+
+    if qdef.flow == 'ki_cooldown' then
+        if any_match(text, qdef.lost_ki_phrases) and not debounced('lostki_' .. id) then
+            if q.state == 'cooldown' or q.state == 'has_key_item_available' then
+                q.state = (q.available_at and os.time() < q.available_at) and 'cooldown_no_ki' or 'available'
+                if q.state == 'available' then
+                    q.obtained_at = nil
+                    q.available_at = nil
+                end
+                state.confidence = 'auto'
+                save()
+                push_message(('%s key item spent.'):format(qdef.label))
+                return true
+            end
+        end
+        if any_match(text, qdef.ki_phrases) and not debounced('ki_' .. id) then
+            return set_cooldown(id, qdef)
+        end
+        return false
+    end
 
     if #qdef.start_phrases > 0 and any_match(text, qdef.start_phrases) then
         if not debounced('start_' .. id) then
@@ -424,6 +656,7 @@ end
 function quests.tick()
     if not state then return end
     roll_week_if_needed()
+    refresh_cooldowns()
     local now = os.time()
     for id, ts in pairs(pending_handin) do
         if (now - ts) > HANDIN_WINDOW then
@@ -438,9 +671,16 @@ function quests.save() save() end
 
 function quests.set_quest_state(quest_id, new_state)
     if not state then return false, 'state not loaded' end
-    if not CATALOG_BY_ID[quest_id] then return false, 'unknown quest' end
+    local qdef = CATALOG_BY_ID[quest_id]
+    if not qdef then return false, 'unknown quest' end
     if STATES[new_state] ~= true then return false, 'invalid state' end
     local q = state.quests[quest_id]
+    if new_state == 'cooldown' and qdef.flow == 'ki_cooldown' then
+        set_cooldown(quest_id, qdef)
+        state.confidence = 'manual_override'
+        save()
+        return true
+    end
     q.state = new_state
     if new_state == 'completed_this_week' then
         q.completed_this_week = true
@@ -448,6 +688,8 @@ function quests.set_quest_state(quest_id, new_state)
     elseif new_state == 'available' then
         q.completed_this_week = false
         q.last_completed = nil
+        q.obtained_at = nil
+        q.available_at = nil
     end
     state.confidence = 'manual_override'
     save()
@@ -455,6 +697,10 @@ function quests.set_quest_state(quest_id, new_state)
 end
 
 function quests.mark_done(quest_id)
+    local qdef = CATALOG_BY_ID[quest_id]
+    if qdef and qdef.flow == 'ki_cooldown' then
+        return quests.set_quest_state(quest_id, 'cooldown')
+    end
     return quests.set_quest_state(quest_id, 'completed_this_week')
 end
 
@@ -466,9 +712,13 @@ function quests.reset_week()
     if not state then return false, 'state not loaded' end
     for _, qdef in ipairs(CATALOG) do
         local q = state.quests[qdef.id]
-        q.completed_this_week = false
-        q.state = 'available'
-        q.last_completed = nil
+        if qdef.flow ~= 'ki_cooldown' then
+            q.completed_this_week = false
+            q.state = 'available'
+            q.last_completed = nil
+            q.obtained_at = nil
+            q.available_at = nil
+        end
     end
     pending_handin = {}
     state.confidence = 'manual_override'
@@ -510,6 +760,7 @@ function quests.init(pname, base_dir)
     debounce_map = {}
     pending_handin = {}
     roll_week_if_needed()
+    refresh_cooldowns()
     save()
 end
 

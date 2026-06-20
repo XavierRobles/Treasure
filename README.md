@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.0.9  
+**Version:** 1.1.0\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,36 @@
 ---
 
 ## 📌 Changelog
+### v1.1.0 (English)
+
+- Updated the **Quests** tracker so **Spice Gals**, **Uninvited Guests** and **Secrets of Ovens Lost** use their real start, key item, hand-in and reward signals:
+  - **Uninvited Guests** is tracked as an access-permit quest: **Monarch Linn Patrol Permit** marks the Monarch Linn objective as ready, and completion is confirmed from Justinius' reward dialogue.
+  - **Secrets of Ovens Lost** and **Spice Gals** are tracked as collect-and-deliver key item quests, using **Tavnazian cookbook** and **Rivernewort** respectively.
+  - Shared rewards like **Page from Miratete's Memoirs** remain tied to the correct pending hand-in, avoiding false positives between quests.
+- Added a **Next** column to the Quests table so each quest shows the correct current objective instead of sharing a generic key-item state.
+- Added **Monarch Linn ENM** tracking:
+  - Detects **Monarch Beard** from `Obtained key item: Monarch beard`.
+  - Starts a real **5 Earth day** cooldown from the moment the key item is obtained.
+  - Preserves the cooldown across weekly resets because ENM access is based on the key item timer, not the weekly quest reset.
+  - Shows **Has KI**, **Has KI +1**, or the remaining cooldown depending on whether Monarch Beard is still held and whether the timer has expired.
+- Refined the Quests UI with dynamic destination zones, compact `?` tooltips for next steps, and a clearer `done | active` summary.
+
+### v1.1.0 (Español)
+
+- Ajustado el tracker de **Quests** para que **Spice Gals**, **Uninvited Guests** y **Secrets of Ovens Lost** usen sus señales reales de inicio, key item, entrega y recompensa:
+  - **Uninvited Guests** se trackea como quest de permiso/acceso: **Monarch Linn Patrol Permit** marca listo el objetivo de Monarch Linn, y la completación se confirma por el diálogo de recompensa de Justinius.
+  - **Secrets of Ovens Lost** y **Spice Gals** se trackean como quests de obtener y entregar key item, usando **Tavnazian cookbook** y **Rivernewort** respectivamente.
+  - Las recompensas compartidas como **Page from Miratete's Memoirs** siguen asociadas al hand-in pendiente correcto, evitando falsos positivos entre quests.
+- Añadida columna **Next** a la tabla de Quests para mostrar el objetivo actual correcto de cada quest en vez de compartir un estado genérico de key item.
+- Añadido tracking de **Monarch Linn ENM**:
+  - Detecta **Monarch Beard** con `Obtained key item: Monarch beard`.
+  - Inicia un cooldown real de **5 Earth days** desde el momento en que se obtiene el key item.
+  - Mantiene el cooldown aunque haya reset semanal, porque el acceso al ENM depende del timer del key item y no del reset semanal de quests.
+  - Muestra **Has KI**, **Has KI +1** o el cooldown restante según si Monarch Beard sigue en posesión del jugador y si el timer ya terminó.
+- Afinada la UI de Quests con zonas de destino dinámicas, tooltips compactos con `?` para los siguientes pasos y resumen separado `done | active`.
+
+---
+
 ### v1.0.9 (English)
 
 - Added a new **Weekly** section to track weekly/twice-weekly content alongside Dynamis and Limbus.
@@ -29,7 +59,9 @@
   - Detects phases automatically (accepted, field NPC started, NM ready, key item obtained, reward ready, completed, blocked).
   - Detects Eeko-Weeko cycle sync messages to keep the weekly cycle in line with the server state.
   - Weekly reset is computed on **Sunday 00:00 JST**; cycle progress is preserved across weekly resets.
-  - Shows the **city start NPC** for each nation (Norejaie / Lumomo / Raifa) in the status table.
+  - Dynamic **Go to** column in the status table: shows the city NPC until the quest is accepted, the field NPC while the run is in progress, and the city NPC again once the reward is ready.
+  - **Next** instruction shown prominently in color above the table, with explicit next-step text for every phase (e.g. *Accept ointment/level sync, then kill the NM*, *Kill the NM and touch ???*).
+  - Trigger log messages include `Next: ...` so the recent triggers panel doubles as a step-by-step guide.
 - Added **Highwind** weekly NM tracker:
   - Detects kills via the in-game defeat message combined with the local player's own XP gain within 5 seconds (double check, so spectating the kill from outside does not count).
   - Shows a live **alive / dead** icon next to the status panel.
@@ -59,7 +91,9 @@
   - Detecta fases automáticamente (aceptada, NPC de campo iniciado, NM listo, key item obtenido, recompensa lista, completada, bloqueada).
   - Detecta mensajes de Eeko-Weeko para sincronizar el ciclo semanal con el estado del servidor.
   - El reset semanal se calcula con **Domingo 00:00 JST**; el progreso del ciclo se mantiene entre resets.
-  - Muestra en la tabla de estado el **NPC de ciudad** donde se inicia la misión (Norejaie / Lumomo / Raifa).
+  - Columna dinámica **Go to** en la tabla de estado: muestra el NPC de ciudad hasta aceptar la quest, el NPC de campo durante la run y vuelve al NPC de ciudad cuando la recompensa está lista.
+  - Instrucción **Next** mostrada en color encima de la tabla, con el siguiente paso explícito por fase (p. ej. *Accept ointment/level sync, then kill the NM*, *Kill the NM and touch ???*).
+  - Los mensajes del log de triggers incluyen `Next: ...` para que el panel de eventos recientes sirva también como guía paso a paso.
 - Añadido tracker semanal de NM **Highwind**:
   - Detecta los kills combinando el mensaje de derrota del juego con la propia ganancia de XP del jugador local en menos de 5 segundos (doble check, para que verlo morir sin participar no cuente).
   - Muestra un icono **vivo / muerto** en vivo al lado del panel de estado.

@@ -179,8 +179,15 @@ end
 
 local function normalize_text(s)
     s = tostring(s or '')
+    -- FFXI color escapes are 2-byte digraphs starting with 0x1E / 0x1F / 0x7F.
+    -- The second byte can be any value (often >31), so a plain %c sweep leaves
+    -- cruft that breaks ^anchored$ patterns. The Highwind boss name is wrapped
+    -- in 0x7F digraphs on HorizonXI, which is the prefix that the previous
+    -- version missed. Mirror libs/sugar/string.strip_colors().
+    s = s:gsub('[\30\31\127].', '')
+    s = s:gsub('[\0-\31\127]', ' ')
     s = s:gsub('%[%d%d:%d%d:%d%d%]', ' ')
-    s = s:gsub('%c', ' ')
+    s = s:gsub('^%b()%s*', '')
     s = s:gsub('%s+', ' ')
     return s:lower():gsub('^%s+', ''):gsub('%s+$', '')
 end

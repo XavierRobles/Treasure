@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.0.8
+-- Versión: 1.1.0
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.0.9'
+addon.version = '1.1.0'
 
 require('common')
 local core = require('core')
@@ -1240,7 +1240,9 @@ end)
 
 ------------------------------------------------------------------ texto chat
 ashita.events.register('text_in', 'treasure_text', function(e)
-    weekly_router.on_text(e.message_modified)
+    if not e.injected then
+        weekly_router.on_text(e.message_modified or e.message)
+    end
     if session and session.is_event then
         local ev_id = session_event_id(session)
         local handler = event_router.get(ev_id)

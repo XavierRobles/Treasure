@@ -53,13 +53,13 @@ local function draw_ecowar_status_table(ctx)
 
     imgui.Separator()
     imgui.TextUnformatted(ecowar.get_summary())
-    imgui.TextDisabled(ecowar.get_next_step())
+    imgui.TextColored(C.QTY or C.ITEM, 'Next: ' .. ecowar.get_next_step())
     imgui.Separator()
 
     if imgui.BeginTable('tbl_ecowar_status', 3, TF_BORDER) then
         imgui.TableSetupColumn('Nation')
         imgui.TableSetupColumn('Status')
-        imgui.TableSetupColumn('Start at')
+        imgui.TableSetupColumn('Go to')
         imgui.TableHeadersRow()
 
         for _, eco in ipairs(ECO_ORDER) do
@@ -67,8 +67,10 @@ local function draw_ecowar_status_table(ctx)
             local color
             if status == 'ACTIVE' then
                 color = C.CUR or C.QTY
-            elseif status == 'DONE' then
+            elseif status == 'DONE THIS WEEK' or status == 'CYCLE DONE' then
                 color = C.LOST or C.ITEM
+            elseif status == 'AFTER RESET' then
+                color = C.QTY or C.ITEM
             else
                 color = C.QTY or C.ITEM
             end
@@ -79,7 +81,7 @@ local function draw_ecowar_status_table(ctx)
             imgui.TableSetColumnIndex(1)
             imgui.TextColored(color, status)
             imgui.TableSetColumnIndex(2)
-            imgui.TextDisabled(ecowar.city_npc(eco) or '')
+            imgui.TextDisabled(ecowar.current_target_npc(eco) or '')
         end
         imgui.EndTable()
     end
@@ -174,9 +176,34 @@ end
 local function color_for_quest_state(C, s)
     if s == 'completed_this_week' then return C.LOST or C.ITEM end
     if s == 'has_key_item' then return C.CUR or C.QTY end
-    if s == 'started' then return C.QTY or C.ITEM end
+    if s == 'has_key_item_available' then return C.CUR or C.QTY end
+    if s == 'cooldown' then return C.CUR or C.QTY end
+    if s == 'cooldown_no_ki' then return C.CUR or C.QTY end
+    if s == 'started' then return C.ITEM or C.QTY end
     if s == 'reward_blocked_inventory' then return C.LOST or C.QTY end
     return C.ITEM
+end
+
+local function attach_tooltip(imgui, text)
+    text = tostring(text or '')
+    if text == '' or imgui.IsItemHovered == nil then return end
+    local ok_hover, hovered = pcall(imgui.IsItemHovered)
+    if not (ok_hover and hovered) then return end
+    if imgui.SetTooltip ~= nil then
+        pcall(imgui.SetTooltip, text)
+        return
+    end
+    if imgui.BeginTooltip ~= nil and imgui.EndTooltip ~= nil then
+        local ok_begin, opened = pcall(imgui.BeginTooltip)
+        if ok_begin and opened then
+            if imgui.TextUnformatted ~= nil then
+                imgui.TextUnformatted(text)
+            else
+                imgui.TextDisabled(text)
+            end
+            pcall(imgui.EndTooltip)
+        end
+    end
 end
 
 local function draw_quests_status_table(ctx)
@@ -196,16 +223,17 @@ local function draw_quests_status_table(ctx)
     imgui.TextUnformatted(quests.get_summary())
     imgui.Separator()
 
-    if imgui.BeginTable('tbl_quests_status', 4, TF_BORDER) then
+    if imgui.BeginTable('tbl_quests_status', 5, TF_BORDER) then
         imgui.TableSetupColumn('Quest')
         imgui.TableSetupColumn('Status')
         imgui.TableSetupColumn('NPC')
         imgui.TableSetupColumn('Zone')
+        imgui.TableSetupColumn('Next')
         imgui.TableHeadersRow()
 
         for _, qdef in ipairs(quests.catalog()) do
             local q = quests.get_quest_state(qdef.id) or { state = 'available' }
-            local label = quests.state_label(q.state)
+            local label = quests.quest_state_label(qdef, q.state, q)
             local color = color_for_quest_state(C, q.state)
 
             imgui.TableNextRow()
@@ -216,7 +244,11 @@ local function draw_quests_status_table(ctx)
             imgui.TableSetColumnIndex(2)
             imgui.TextDisabled(qdef.npc or '')
             imgui.TableSetColumnIndex(3)
-            imgui.TextDisabled(qdef.zone_hint or '')
+            imgui.TextDisabled(quests.get_quest_zone_hint(qdef.id) or '')
+            imgui.TableSetColumnIndex(4)
+            local next_step = quests.get_quest_next_step(qdef.id) or ''
+            imgui.TextColored(C.ITEM or C.QTY, '?')
+            attach_tooltip(imgui, next_step)
         end
         imgui.EndTable()
     end

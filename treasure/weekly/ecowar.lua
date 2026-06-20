@@ -212,6 +212,18 @@ function ecowar.field_npc(eco) return FIELD_NPCS[eco] end
 function ecowar.city_npc(eco) return CITY_NPCS[eco] end
 function ecowar.all_ecos() return ALL_ECOS end
 
+function ecowar.current_target_npc(eco)
+    if not state or state.activeEco ~= eco then return CITY_NPCS[eco] end
+    local phase = state.phase
+    if phase == 'accepted'
+            or phase == 'field_agent_started'
+            or phase == 'nm_ready'
+            or phase == 'key_item_obtained' then
+        return FIELD_NPCS[eco]
+    end
+    return CITY_NPCS[eco]
+end
+
 function ecowar.is_cycle_complete()
     if not state then return false end
     return state.cycleCompleted.sandy == true
@@ -285,7 +297,13 @@ end
 function ecowar.get_status_for_eco(eco)
     if not state then return 'OPEN' end
     if state.activeEco == eco then return 'ACTIVE' end
-    if state.cycleCompleted[eco] == true then return 'DONE' end
+    if state.currentWeekCompleted ~= 'none' then
+        if state.currentWeekCompleted == eco then return 'DONE THIS WEEK' end
+        if ecowar.is_cycle_complete() then return 'AFTER RESET' end
+        if state.cycleCompleted[eco] == true then return 'CYCLE DONE' end
+        return 'AFTER RESET'
+    end
+    if state.cycleCompleted[eco] == true then return 'CYCLE DONE' end
     return 'OPEN'
 end
 
@@ -402,99 +420,99 @@ local function process_triggers(text)
     if contains_all(text, { 'how...lovely. a chunk of indigested meat', 'take it back to lumomo' }) then
         return apply('postki_windy', function()
             set_phase_internal('windy', 'field_agent_confirmed')
-            push_message('Windurst ready. Return to Lumomo.')
+            push_message('Windurst ready to complete. Next: Return to Lumomo.')
         end)
     end
     if contains_all(text, { 'lemme see that... huh, an indigested ore', 'take it on back to raifa' }) then
         return apply('postki_bastok', function()
             set_phase_internal('bastok', 'field_agent_confirmed')
-            push_message('Bastok ready. Return to Raifa.')
+            push_message('Bastok ready to complete. Next: Return to Raifa.')
         end)
     end
     if contains_all(text, { "what's that you have there? an indigested stalagmite", "take it back to her in san d'oria" }) then
         return apply('postki_sandy', function()
             set_phase_internal('sandy', 'field_agent_confirmed')
-            push_message("San d'Oria ready. Return to Norejaie.")
+            push_message("San d'Oria ready to complete. Next: Return to Norejaie.")
         end)
     end
     if contains(text, 'obtained key item: indigested meat') then
         return apply('ki_windy', function()
             set_phase_internal('windy', 'key_item_obtained')
-            push_message('Windurst KI obtained. Return to Ahko Mhalijikhari.')
+            push_message('Windurst key item obtained. Next: Return to Ahko Mhalijikhari.')
         end)
     end
     if contains(text, 'obtained key item: indigested ore') then
         return apply('ki_bastok', function()
             set_phase_internal('bastok', 'key_item_obtained')
-            push_message('Bastok KI obtained. Return to Degga.')
+            push_message('Bastok key item obtained. Next: Return to Degga.')
         end)
     end
     if contains(text, 'obtained key item: indigested stalagmite') then
         return apply('ki_sandy', function()
             set_phase_internal('sandy', 'key_item_obtained')
-            push_message("San d'Oria KI obtained. Return to Rojaireaut.")
+            push_message("San d'Oria key item obtained. Next: Return to Rojaireaut.")
         end)
     end
     if contains(text, "now, close your eyes for a moment. this won't hurt a bit") then
         return apply('nmready_sandy', function()
             set_phase_internal('sandy', 'nm_ready')
-            push_message("San d'Oria NM ready.")
+            push_message("San d'Oria NM ready. Next: Kill the NM and touch ???.")
         end)
     end
     if contains_all(text, { 'rrright, here we go', 'close your eyes' }) then
         return apply('nmready_windy', function()
             set_phase_internal('windy', 'nm_ready')
-            push_message('Windurst NM ready.')
+            push_message('Windurst NM ready. Next: Kill the NM and touch ???.')
         end)
     end
     if contains(text, 'now, just close your eyes for a moment') then
         local eco = (state.activeEco == 'windy') and 'windy' or 'bastok'
         return apply('nmready_' .. eco, function()
             set_phase_internal(eco, 'nm_ready')
-            push_message(eco_label(eco) .. ' NM ready.')
+            push_message(eco_label(eco) .. ' NM ready. Next: Kill the NM and touch ???.')
         end)
     end
     if contains_all(text, { "you're here for the v.e.r.m.i.n. extermination operation", 'we want you to find and defeat the fiend' }) then
         return apply('fieldstart_sandy', function()
             set_phase_internal('sandy', 'field_agent_started')
-            push_message("San d'Oria field step started.")
+            push_message("San d'Oria field step started. Next: Accept ointment/level sync, then kill the NM.")
         end)
     end
     if contains_all(text, { "here's what we want you to do", 'defeat the creatures that are infesting the scrap materials' }) then
         return apply('fieldstart_bastok', function()
             set_phase_internal('bastok', 'field_agent_started')
-            push_message('Bastok field step started.')
+            push_message('Bastok field step started. Next: Accept ointment/level sync, then kill the NM.')
         end)
     end
     if contains_all(text, { "ah, you're here at last", 'v.e.r.m.i.n. assignment' })
             or contains_all(text, { "find and defeat the creatures that've been rrrunning amok", 'proof of their demise to lumomo' }) then
         return apply('fieldstart_windy', function()
             set_phase_internal('windy', 'field_agent_started')
-            push_message('Windurst field step started.')
+            push_message('Windurst field step started. Next: Accept ointment/level sync, then kill the NM.')
         end)
     end
     if contains_all(text, { "i knew you'd come through for us", 'rojaireaut, our v.e.r.m.i.n. agent in the field' }) then
         return apply('accepted_sandy', function()
             set_phase_internal('sandy', 'accepted')
-            push_message("San d'Oria accepted. Next: Rojaireaut.")
+            push_message("San d'Oria accepted. Next: Talk to Rojaireaut in Ordelle's Caves.")
         end)
     end
     if contains_all(text, { 'excellentaru! bring me back proof', 'trouncy-wounced the beasties' }) then
         return apply('accepted_windy', function()
             set_phase_internal('windy', 'accepted')
-            push_message('Windurst accepted. Next: Ahko Mhalijikhari.')
+            push_message('Windurst accepted. Next: Talk to Ahko Mhalijikhari in Maze of Shakhrami.')
         end)
     end
     if contains_all(text, { 'i knew you would help', 'degga, one of our v.e.r.m.i.n. field agents' }) then
         return apply('accepted_bastok', function()
             set_phase_internal('bastok', 'accepted')
-            push_message('Bastok accepted. Next: Degga.')
+            push_message('Bastok accepted. Next: Talk to Degga in Gusgen Mines.')
         end)
     end
     if contains(text, 'you can get more details on the assignment from ahko mhalijikhari') then
         return apply('alreadyactive_windy', function()
             set_phase_internal('windy', 'accepted')
-            push_message('Windurst already active.')
+            push_message('Windurst already active. Next: Talk to Ahko Mhalijikhari.')
         end)
     end
     if contains_all(text, { 'hey, mister adventurer', 'you already look kinda busy-wusy' }) then
