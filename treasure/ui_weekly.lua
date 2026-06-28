@@ -69,10 +69,12 @@ local function draw_ecowar_status_table(ctx)
                 color = C.CUR or C.QTY
             elseif status == 'DONE THIS WEEK' or status == 'CYCLE DONE' then
                 color = C.LOST or C.ITEM
+            elseif status == 'LOCKED' then
+                color = C.LOST or C.ITEM
             elseif status == 'AFTER RESET' then
                 color = C.QTY or C.ITEM
             else
-                color = C.QTY or C.ITEM
+                color = C.ITEM or C.QTY
             end
 
             imgui.TableNextRow()

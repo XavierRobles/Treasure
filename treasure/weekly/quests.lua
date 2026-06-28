@@ -347,7 +347,10 @@ local function roll_week_if_needed()
         state.lastKnownWeekId = wid
         for _, qdef in ipairs(CATALOG) do
             local q = state.quests[qdef.id] or default_quest_state()
-            if qdef.flow ~= 'ki_cooldown' then
+            -- Reset only lifts the turn-in lock; in-progress quests (accepted /
+            -- KI held / inventory-blocked) keep their state across the reset.
+            if qdef.flow ~= 'ki_cooldown'
+                    and (q.completed_this_week or q.state == 'completed_this_week') then
                 q.completed_this_week = false
                 q.state = 'available'
                 q.last_completed = nil
@@ -624,7 +627,9 @@ local function process_quest(text, qdef)
         end
     end
 
-    if pending_handin[id] then
+    -- Stay receptive after an inventory block: the reward can still land when
+    -- the player frees a slot, even if the NPC doesn't repeat its handin line.
+    if pending_handin[id] or q.state == 'reward_blocked_inventory' then
         if any_match(text, qdef.block_phrases) then
             finalize_block(id, qdef)
             return true

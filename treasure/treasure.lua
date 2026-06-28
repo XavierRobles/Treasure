@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.1.0
+-- Versión: 1.1.1
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.1.0'
+addon.version = '1.1.1'
 
 require('common')
 local core = require('core')

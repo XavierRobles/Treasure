@@ -297,12 +297,16 @@ end
 function ecowar.get_status_for_eco(eco)
     if not state then return 'OPEN' end
     if state.activeEco == eco then return 'ACTIVE' end
+    if state.activeEco ~= 'none' then
+        return 'LOCKED'
+    end
     if state.currentWeekCompleted ~= 'none' then
         if state.currentWeekCompleted == eco then return 'DONE THIS WEEK' end
         if ecowar.is_cycle_complete() then return 'AFTER RESET' end
         if state.cycleCompleted[eco] == true then return 'CYCLE DONE' end
         return 'AFTER RESET'
     end
+    if ecowar.is_cycle_complete() then return 'OPEN' end
     if state.cycleCompleted[eco] == true then return 'CYCLE DONE' end
     return 'OPEN'
 end

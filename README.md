@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.1.0\
+**Version:** 1.1.1\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -20,6 +20,26 @@
 ---
 
 ## 📌 Changelog
+### v1.1.1 (English)
+
+- Refined **Eco-Warrior** status display after weekly reset and during active quests:
+  - Completed cycles now reopen as **OPEN** after reset instead of staying visually marked as cycle done.
+  - Once a nation is active, the other two show **LOCKED** instead of looking selectable.
+  - **OPEN** now uses the available-state color consistently.
+- Fixed the weekly **Quests** reset wiping in-progress quests: accepted, key-item-held and inventory-blocked quests now carry over the reset, which only lifts the turn-in lock on completed ones.
+- Fixed **Secrets of Ovens Lost** (and any reward-on-handin quest) getting stuck on **Inventory full**: a quest flagged inventory-blocked now still completes when the held reward is granted after freeing a slot, even if the NPC doesn't repeat its hand-in dialogue.
+
+### v1.1.1 (Español)
+
+- Afinado el estado visual de **Eco-Warrior** tras el reset semanal y durante quests activas:
+  - Los ciclos completados vuelven a mostrarse como **OPEN** tras el reset en vez de quedarse marcados visualmente como ciclo hecho.
+  - Cuando una nación está activa, las otras dos muestran **LOCKED** en vez de parecer seleccionables.
+  - **OPEN** usa ahora el color de disponible de forma consistente.
+- Corregido el reset semanal de **Quests** que borraba el progreso: las quests aceptadas, con key item o bloqueadas por inventario ahora se conservan tras el reset, que solo libera el candado de entrega de las completadas.
+- Corregido **Secrets of Ovens Lost** (y cualquier quest de recompensa al entregar) que se quedaba atascada en **Inventory full**: una quest marcada como bloqueada por inventario ahora se completa cuando se entrega la recompensa retenida tras liberar un hueco, aunque el NPC no repita su diálogo de entrega.
+
+---
+
 ### v1.1.0 (English)
 
 - Updated the **Quests** tracker so **Spice Gals**, **Uninvited Guests** and **Secrets of Ovens Lost** use their real start, key item, hand-in and reward signals:
