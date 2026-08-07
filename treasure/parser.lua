@@ -4,6 +4,7 @@
 local core = require('core')
 local store = require('store')
 local timeutil = require('timeutil')
+local chatutil = require('chatutil')
 local parser = {}
 
 ------------------------ sesión
@@ -38,19 +39,7 @@ end
 
 ------------------------ helpers
 local function strip(s)
-    s = (s or '')
-            :gsub('\30.', '')
-            :gsub('\31.', '')
-            :gsub('[\0-\31]', '')
-            :gsub('^%s+', '')
-            :gsub('%s+$', '')
-
-    -- remove leading timestamp: [19:44:25]
-    s = s:gsub('^%[%d%d:%d%d:%d%d%]%s*', '')
-    -- remove leading channel tag: (Test) / (Party) / etc.
-    s = s:gsub('^%b()%s*', '')
-
-    return s
+    return chatutil.strip(s)
 end
 
 local function clean(n)
@@ -442,7 +431,10 @@ local function handle(line, s)
     end
 end
 
-function parser.handle_line(txt, s)
+function parser.handle_line(txt, s, context)
+    if not chatutil.is_trusted_game_text(context) then
+        return
+    end
     local ok, err = pcall(function()
         local raw = tostring(txt or '')
         raw = raw:gsub('\r\n', '\n'):gsub('\r', '\n')
@@ -472,6 +464,7 @@ function parser.update_treasure_pool(s)
     end
     s.drops.pool_live = {}
     local inv = mm:GetInventory()
+    local active_exp = {}
     for slot = 0, 9 do
         local t = inv:GetTreasurePoolItem(slot)
         if t and t.ItemId ~= 0 then
@@ -486,6 +479,7 @@ function parser.update_treasure_pool(s)
             end
 
             parser._exp[key] = parser._exp[key] or (timeutil.now() + 299)
+            active_exp[key] = true
             s.drops.pool_live[slot] = {
                 name = name,
                 item_id = t.ItemId,
@@ -494,6 +488,11 @@ function parser.update_treasure_pool(s)
                 winner = t.WinningEntityName,
                 expire = parser._exp[key],
             }
+        end
+    end
+    for key in pairs(parser._exp) do
+        if not active_exp[key] then
+            parser._exp[key] = nil
         end
     end
 end

@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.1.1\
+**Version:** 1.1.2\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -9,17 +9,71 @@
 
 > ### 📢 Notice
 >
-> Treasure is completely transparent in its operation: it acts only on the client, processing information that is already displayed in the game chat.  
-> It does **not** modify any game files, **does not** send data to the server, and consumes minimal resources, operating solely with the local data available.
+> Treasure runs locally and does **not** modify game files or transmit data to external services. It reads local game chat, packets and memory needed for tracking. Party-chat reports are sent to the game server only when the user explicitly runs a reporting command.
 >
 > ---
 >
-> Treasure es completamente transparente en su funcionamiento: actúa solo en el cliente, procesando la información que ya aparece en el chat del juego.  
-> **No** modifica archivos del juego, **no** envía datos al servidor y consume recursos mínimos, operando únicamente con los datos locales disponibles.
+> Treasure funciona localmente y **no** modifica archivos del juego ni transmite datos a servicios externos. Lee el chat, paquetes y memoria local necesarios para el seguimiento. Los reportes al chat de party solo se envían al servidor del juego cuando el usuario ejecuta explícitamente un comando de reporte.
 
 ---
 
 ## 📌 Changelog
+### v1.1.2 (English)
+
+- Hardened all event and weekly trackers against player-authored chat:
+  - Dynamis and Limbus loot, lost-item, timer, route and gate signals now ignore say, shout, party, linkshell, emote and other player channels.
+  - Eco-Warrior and Quests now accept only trusted game text.
+  - Weekly dialogue buffers expire after four seconds and never combine different chat modes.
+- Centralized chat normalization:
+  - Timestamps, channel tags, control bytes and two-byte `0x1E`, `0x1F` and `0x7F` color sequences are stripped consistently.
+  - Treasure Pool expiration-cache entries are removed when their items leave the pool.
+- Reinforced **Highwind** detection:
+  - Official combat-mode `defeats the Highwind` and `The Highwind falls to the ground` messages confirm the kill immediately.
+  - Say and emote imitations are rejected.
+  - The exact **3000 EXP + 3000 gil** pair remains an Airship-zone fallback when the server defeat line is missing.
+- Added resilient persistence:
+  - Sessions, character settings and weekly states are written atomically.
+  - The previous valid file is retained as `.bak` and loaded automatically if the primary file is damaged.
+  - Active state is force-saved when Treasure is unloaded or reloaded.
+  - Active runs started before midnight can be recovered for up to 12 hours.
+- Improved historical-session handling:
+  - `/tr c`, `/tr cur`, `/tr currency` and `/tr who` report the selected saved session when no event is active.
+  - Historical edits preserve the original filename and character owner.
+  - Invalid historical filenames are rejected.
+- Improved currency reporting:
+  - Limbus reports now support **Ancient Beastcoin** totals and per-player results.
+  - A new report replaces unsent lines from the previous report.
+  - The party-chat queue is bounded to prevent stale output from accumulating indefinitely.
+- Added pure Lua regression coverage for chat classification, atomic persistence, Highwind detection and session parsing.
+
+### v1.1.2 (Español)
+
+- Protegidos todos los eventos y trackers semanales frente a texto escrito por jugadores:
+  - Las señales de loot, objetos perdidos, timer, rutas y gates de Dynamis y Limbus ignoran ahora say, shout, party, linkshell, emote y otros canales de jugador.
+  - Eco-Warrior y Quests solo aceptan texto fiable generado por el juego.
+  - Los buffers de diálogo semanal caducan tras cuatro segundos y nunca mezclan modos de chat distintos.
+- Centralizada la normalización del chat:
+  - Timestamps, etiquetas de canal, bytes de control y secuencias de color de dos bytes `0x1E`, `0x1F` y `0x7F` se eliminan de forma consistente.
+  - Las entradas de expiración abandonadas se eliminan del caché del Treasure Pool.
+- Reforzada la detección de **Highwind**:
+  - Los mensajes oficiales de combate `defeats the Highwind` y `The Highwind falls to the ground` confirman la muerte inmediatamente.
+  - Se rechazan imitaciones mediante say o emote.
+  - La pareja exacta **3000 EXP + 3000 gil** se mantiene como respaldo en zonas Airship cuando falta el mensaje de derrota.
+- Añadida persistencia resistente:
+  - Las sesiones, ajustes de personaje y estados semanales se escriben de forma atómica.
+  - El archivo válido anterior se conserva como `.bak` y se recupera automáticamente si el principal está dañado.
+  - El estado activo se fuerza a guardar al descargar o recargar Treasure.
+  - Las runs activas iniciadas antes de medianoche pueden recuperarse durante un máximo de 12 horas.
+- Mejorada la gestión de sesiones históricas:
+  - `/tr c`, `/tr cur`, `/tr currency` y `/tr who` reportan la sesión guardada seleccionada cuando no hay un evento activo.
+  - Las ediciones históricas conservan el nombre de archivo y personaje propietario originales.
+  - Se rechazan nombres de archivo históricos inválidos.
+- Mejorados los reportes de moneda:
+  - Los reportes de Limbus admiten totales y resultados por jugador de **Ancient Beastcoin**.
+  - Un reporte nuevo reemplaza las líneas no enviadas del reporte anterior.
+  - La cola de party tiene un límite para impedir la acumulación indefinida de mensajes antiguos.
+- Añadidas regresiones Lua puras para clasificación de chat, persistencia atómica, detección de Highwind y parsing de sesiones.
+
 ### v1.1.1 (English)
 
 - Refined **Eco-Warrior** status display after weekly reset and during active quests:

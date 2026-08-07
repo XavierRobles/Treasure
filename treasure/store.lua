@@ -4,6 +4,7 @@
 
 require('common')
 local timeutil = require('timeutil')
+local persist = require('persist')
 
 local store = {}
 local res = AshitaCore:GetResourceManager()
@@ -232,24 +233,36 @@ local function matching_run_files(event_id, zid, pname, day)
     return out
 end
 
-local function dump(tbl, ind)
+local function dump(tbl, ind, seen)
     ind = ind or ''
+    seen = seen or {}
+    if seen[tbl] then
+        error('cannot serialize cyclic session table')
+    end
+    seen[tbl] = true
     local out = '{\n'
     for k, v in pairs(tbl) do
-        if type(k) == 'number' then
-            out = out .. ind .. '  [' .. k .. '] = '
-        else
-            out = out .. ind .. '  [' .. string.format('%q', k) .. '] = '
+        if k ~= 'pool_live' and type(v) ~= 'function' then
+            if type(k) == 'number' then
+                out = out .. ind .. '  [' .. k .. '] = '
+            elseif type(k) == 'string' then
+                out = out .. ind .. '  [' .. string.format('%q', k) .. '] = '
+            else
+                error('unsupported session key type: ' .. type(k))
+            end
+            if type(v) == 'table' then
+                out = out .. dump(v, ind .. '  ', seen)
+            elseif type(v) == 'string' then
+                out = out .. string.format('%q', v)
+            elseif type(v) == 'number' or type(v) == 'boolean' or type(v) == 'nil' then
+                out = out .. tostring(v)
+            else
+                error('unsupported session value type: ' .. type(v))
+            end
+            out = out .. ',\n'
         end
-        if type(v) == 'table' then
-            out = out .. dump(v, ind .. '  ')
-        elseif type(v) == 'string' then
-            out = out .. string.format('%q', v)
-        else
-            out = out .. tostring(v)
-        end
-        out = out .. ',\n'
     end
+    seen[tbl] = nil
     return out .. ind .. '}'
 end
 
@@ -285,22 +298,33 @@ function store.save(sess, opts)
 
     -- Get the current character name.
     local ent = GetPlayerEntity()
-    local pname = (ent and ent.Name) or (sess and sess.player_name) or "UNKNOWN"
+    local current_pname = ent and ent.Name
+    local existing_meta = sess._filename and parse_filename_meta(sess._filename) or nil
+    local pname
+    if sess._filename and sess._filename ~= '' then
+        pname = (existing_meta and existing_meta.player) or sess.player_name or current_pname
+    else
+        pname = current_pname or sess.player_name
+    end
+    pname = pname or 'UNKNOWN'
     if not pname or pname == "UNKNOWN" then
         -- print("[Treasure][store] Session not saved: player name is UNKNOWN")
         return false
     end
-    sess.player_name = pname
+    if not sess.player_name or sess.player_name == '' then
+        sess.player_name = pname
+    end
 
-    local ev_id = normalize_event_id(sess.event_id or event_id_opt)
+    local sess_event_id = type(sess.event_id) == 'string' and sess.event_id ~= '' and sess.event_id or nil
+    local ev_id = normalize_event_id(sess_event_id or event_id_opt)
     local filename
-    if ev_id == 'dynamis' then
+    if sess._filename and sess._filename ~= '' then
+        filename = sess._filename
+    elseif ev_id == 'dynamis' then
         -- Policy: one Dynamis file per day and zone; no Run suffix.
         sess.run_index = 1
         filename = fname(ev_id, sess.zone_id, tonumber(sess.start_time) or os.time(), pname, 1)
         sess._filename = filename
-    elseif sess._filename and sess._filename ~= '' then
-        filename = sess._filename
     else
         local day = os.date('%Y-%m-%d', tonumber(sess.start_time) or os.time())
         local run_idx = tonumber(sess.run_index)
@@ -328,24 +352,13 @@ function store.save(sess, opts)
         sess._filename = filename
     end
 
-    local path = root .. filename
-    local f = io.open(path, 'w+')
-    if not f then
+    local ok_dump, serialized = pcall(dump, sess)
+    if not ok_dump then
         return false
     end
-
-    -- Do not persist live pool cache (recomputed from memory).
-    local pool_live_bak = nil
-    if sess.drops and sess.drops.pool_live then
-        pool_live_bak = sess.drops.pool_live
-        sess.drops.pool_live = nil
-    end
-
-    f:write('return ' .. dump(sess) .. '\n')
-    f:close()
-
-    if pool_live_bak then
-        sess.drops.pool_live = pool_live_bak
+    local ok_write = persist.write_atomic(root .. filename, 'return ' .. serialized .. '\n')
+    if not ok_write then
+        return false
     end
 
     save_gate[sess] = now
@@ -378,19 +391,29 @@ function store.load(zid, opts)
     end
 
     local today = os.date('%Y-%m-%d')
+    local yesterday = os.date('%Y-%m-%d', os.time() - 86400)
     local candidates = matching_run_files(ev_id, zid, pname, today)
+    for _, cand in ipairs(matching_run_files(ev_id, zid, pname, yesterday)) do
+        candidates[#candidates + 1] = cand
+    end
     if #candidates == 0 then
         return nil
     end
 
     for _, cand in ipairs(candidates) do
         local fullpath = root .. cand.name
-        local ok, sess = pcall(dofile, fullpath)
-        if ok and type(sess) == 'table' then
+        local sess = persist.load_table(fullpath)
+        if type(sess) == 'table' then
             local can_use = ((not only_active) or (sess.ended ~= true))
-            if only_active and ev_id == 'dynamis' then
+            local meta = parse_filename_meta(cand.name)
+            local is_today = meta and meta.date == today
+            if only_active and ev_id == 'dynamis' and is_today then
                 -- Policy: always resume today's Dynamis file for this zone/player.
                 can_use = true
+            end
+            if not is_today then
+                local age = os.time() - (tonumber(sess.start_time) or 0)
+                can_use = can_use and age >= 0 and age <= (12 * 60 * 60)
             end
 
             if can_use then
@@ -517,9 +540,12 @@ function store.load_file(filename)
     if not filename or filename == '' then
         return nil
     end
+    if filename:find('[\\/]', 1) or not filename:match('%.lua$') then
+        return nil
+    end
     local path = root .. filename
-    local ok, sess = pcall(dofile, path)
-    if ok and type(sess) == 'table' then
+    local sess = persist.load_table(path)
+    if type(sess) == 'table' then
         -- Filename convention:
         -- "<Event> - <zone_tag> - <YYYY-MM-DD> - Run <n> - <player>.lua"
         -- Legacy: "<Event> - <zone_tag> - <YYYY-MM-DD> - <player>.lua"

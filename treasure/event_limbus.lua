@@ -5,6 +5,7 @@
 local parser = require('parser')
 local core = require('core')
 local store = require('store')
+local chatutil = require('chatutil')
 
 local limbus = {
     id = 'limbus',
@@ -1749,7 +1750,10 @@ function limbus.on_packet_in(pkt, sess)
     end
 end
 
-function limbus.on_text(line, sess)
+function limbus.on_text(line, sess, context)
+    if not chatutil.is_trusted_game_text(context) then
+        return
+    end
     local raw = tostring(line or '')
     raw = raw:gsub('\r\n', '\n'):gsub('\r', '\n')
     raw = raw:gsub('(%S)(%[%d%d:%d%d:%d%d%])', '%1\n%2')
@@ -1762,7 +1766,7 @@ function limbus.on_text(line, sess)
     end
 
     if sess and sess.limbus_run_started == true then
-        parser.handle_line(raw, sess)
+        parser.handle_line(raw, sess, context)
     end
 end
 

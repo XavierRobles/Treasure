@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Addon: Treasure
 -- Autor: Waky
--- Versión: 1.1.1
+-- Versión: 1.1.2
 -- Descripción:
 --   Registra en tiempo real todos los objetos en eventos y 
 -- los muestra en una interfaz personalizable
@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.1.1'
+addon.version = '1.1.2'
 
 require('common')
 local core = require('core')
@@ -22,6 +22,7 @@ local weekly_router = require('weekly_router')
 local ecowar = require('weekly.ecowar')
 local highwind = require('weekly.highwind')
 local timeutil = require('timeutil')
+local persistence = require('persist')
 local fs = ashita.fs
 local chat = require('chat')
 
@@ -260,12 +261,16 @@ end
 local party_chat_queue = {}
 local last_party_chat_sent = 0
 local PARTY_CHAT_DELAY = 2.0
+local PARTY_CHAT_MAX_PENDING = 32
 
 local function enqueue_party_chat(msg)
     if not msg or msg == '' then
         return
     end
     party_chat_queue[#party_chat_queue + 1] = msg
+    while #party_chat_queue > PARTY_CHAT_MAX_PENDING do
+        table.remove(party_chat_queue, 1)
+    end
 end
 
 local function process_party_chat_queue()
@@ -624,8 +629,8 @@ local function ensure_settings()
     local cfg
 
     if fs.exists(cfg_file) then
-        local ok, loaded = pcall(dofile, cfg_file)
-        if ok and type(loaded) == 'table' then
+        local loaded = persistence.load_table(cfg_file)
+        if type(loaded) == 'table' then
             cfg = loaded
         end
     end
@@ -635,8 +640,8 @@ local function ensure_settings()
         local sid = ent.ServerId or 0
         local legacy_file = base_dir .. string.format('%s_%u\\settings.lua', pname, sid)
         if fs.exists(legacy_file) then
-            local ok, loaded = pcall(dofile, legacy_file)
-            if ok and type(loaded) == 'table' then
+            local loaded = persistence.load_table(legacy_file)
+            if type(loaded) == 'table' then
                 cfg = loaded
             end
         end
@@ -668,11 +673,7 @@ local function save_character_settings(cfg)
     if dir and not fs.exists(dir) then
         fs.create_dir(dir)
     end
-    local f = io.open(cfg._config_file, 'w+')
-    if f then
-        f:write('return ' .. _dump_cfg(cfg) .. '\n')
-        f:close()
-    end
+    persistence.write_atomic(cfg._config_file, 'return ' .. _dump_cfg(cfg) .. '\n')
 end
 
 ------------------------------------------------------------------ reset all
@@ -778,8 +779,19 @@ ashita.events.register('command', 'treasure_cmd', function(e)
                         :gsub('^%s+', ''):gsub('%s+$', '')
     end
 
+    local report_session = nil
+    if session and session.is_event then
+        report_session = session
+    elseif ui.history_session and ui.history_session.is_event then
+        report_session = ui.history_session
+    end
+
     local function is_cur(name)
         local s = norm(name or '')
+        local report_event = session_event_id(report_session)
+        if report_event == 'limbus' then
+            return s:find('ancient beastcoin', 1, true) ~= nil
+        end
         return (s:find('bronzepiece') ~= nil)
                 or (s:find('whiteshell') ~= nil)
                 or (s:find('byne bill') ~= nil)
@@ -808,6 +820,9 @@ ashita.events.register('command', 'treasure_cmd', function(e)
 
     local function base_cur(name)
         local s = norm(name)
+        if s:find('ancient beastcoin', 1, true) then
+            return 'Ancient Beastcoin'
+        end
         if s:find('byne bill') then
             return 'Byne Bill'
         end
@@ -827,6 +842,9 @@ ashita.events.register('command', 'treasure_cmd', function(e)
     end
 
     local function display_cur(base)
+        if base == 'Ancient Beastcoin' then
+            return base, 'Beastcoin'
+        end
         if base == 'Bronzepiece' then
             return 'Ordelle Bronzepiece', 'Bronze'
         end
@@ -847,8 +865,12 @@ ashita.events.register('command', 'treasure_cmd', function(e)
     end
 
     local function ensure_event()
-        if not (session and session.is_event and session.drops and session.drops.currency_total) then
-            local ev_name = event_router.title(session and session.event_id or ui.active_event)
+        if not (report_session and report_session.drops and report_session.drops.currency_total) then
+            local ev_name = event_router.title(
+                (report_session and report_session.event_id)
+                or (ui.history_session and ui.history_session.event_id)
+                or ui.active_event
+            )
             print_local('No active ' .. tostring(ev_name) .. ' session.')
             return false
         end
@@ -876,10 +898,18 @@ ashita.events.register('command', 'treasure_cmd', function(e)
         if not ensure_event() then
             return
         end
+        -- A new report supersedes any unsent lines from an older report.
+        party_chat_queue = {}
+        local currency_order
+        if session_event_id(report_session) == 'limbus' then
+            currency_order = { 'Ancient Beastcoin' }
+        else
+            currency_order = { 'Whiteshell', 'Bronzepiece', 'Byne Bill' }
+        end
 
         -- /tr who  -> per-player currency drops
         if want_who then
-            local byp = (session.drops and session.drops.by_player) or {}
+            local byp = (report_session.drops and report_session.drops.by_player) or {}
             local any = false
 
             for player, bag in pairs(byp) do
@@ -892,7 +922,7 @@ ashita.events.register('command', 'treasure_cmd', function(e)
                 end
 
                 local parts = {}
-                for _, base in ipairs({ 'Whiteshell', 'Bronzepiece', 'Byne Bill' }) do
+                for _, base in ipairs(currency_order) do
                     local v = agg[base] or 0
                     if v > 0 then
                         local _, short = display_cur(base)
@@ -916,7 +946,7 @@ ashita.events.register('command', 'treasure_cmd', function(e)
         local agg = {}
         local total = 0
 
-        for item, qty in pairs(session.drops.currency_total or {}) do
+        for item, qty in pairs(report_session.drops.currency_total or {}) do
             if is_cur(item) then
                 local base = base_cur(item)
                 local units = to_units(item, qty)
@@ -924,7 +954,7 @@ ashita.events.register('command', 'treasure_cmd', function(e)
             end
         end
 
-        for _, base in ipairs({ 'Whiteshell', 'Bronzepiece', 'Byne Bill' }) do
+        for _, base in ipairs(currency_order) do
             local v = agg[base] or 0
             if v > 0 then
                 local _, short = display_cur(base)
@@ -1240,16 +1270,35 @@ end)
 
 ------------------------------------------------------------------ texto chat
 ashita.events.register('text_in', 'treasure_text', function(e)
+    local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
+    local text_context = {
+        mode = e.mode,
+        injected = e.injected,
+        zone_name = rm:GetString('zones.names', zid) or '',
+    }
     if not e.injected then
-        weekly_router.on_text(e.message_modified or e.message)
+        weekly_router.on_text(e.message_modified or e.message, text_context)
     end
     if session and session.is_event then
         local ev_id = session_event_id(session)
         local handler = event_router.get(ev_id)
         if handler and handler.on_text then
-            handler.on_text(e.message_modified, session)
+            handler.on_text(e.message_modified or e.message, session, text_context)
         else
-            parser.handle_line(e.message_modified, session)
+            parser.handle_line(e.message_modified or e.message, session, text_context)
         end
     end
+end)
+
+ashita.events.register('unload', 'treasure_unload', function()
+    if session and session.is_event then
+        local can_persist = session_event_id(session) ~= 'limbus'
+                or session.limbus_run_started == true
+        if can_persist then
+            store.save(session, { force = true, event_id = session_event_id(session) })
+        end
+    end
+    weekly_router.save_all()
+    save_character_settings(cfg)
+    party_chat_queue = {}
 end)

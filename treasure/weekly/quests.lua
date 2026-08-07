@@ -5,6 +5,9 @@
 ---------------------------------------------------------------------------
 
 local fs = ashita.fs
+local persist = require('persist')
+local chatutil = require('chatutil')
+local timeutil = require('timeutil')
 
 local quests = {
     id = 'quests',
@@ -14,6 +17,7 @@ local quests = {
 local SERVER_NAME = 'HorizonXI'
 local MAX_MESSAGES = 6
 local MAX_BUFFER = 12
+local BUFFER_WINDOW = 4
 local DEBOUNCE_SECONDS = 3
 local HANDIN_WINDOW = 20
 local DAY_SECONDS = 86400
@@ -182,6 +186,8 @@ local state = nil
 local state_file = nil
 local player_name = nil
 local text_buffer = {}
+local buffer_last_at = nil
+local buffer_mode = nil
 local debounce_map = {}
 local ui_messages = {}
 local pending_handin = {}
@@ -210,25 +216,11 @@ local function serialize(value, indent)
 end
 
 local function load_table(path)
-    local f = io.open(path, 'r')
-    if not f then return nil end
-    local content = f:read('*a')
-    f:close()
-    local loader = loadstring(content)
-    if not loader then return nil end
-    local ok, data = pcall(loader)
-    if ok and type(data) == 'table' then return data end
-    return nil
+    return persist.load_table(path)
 end
 
 local function save_table(path, data)
-    local f = io.open(path, 'w+')
-    if not f then return false end
-    f:write('return ')
-    f:write(serialize(data, 0))
-    f:write('\n')
-    f:close()
-    return true
+    return persist.write_atomic(path, 'return ' .. serialize(data, 0) .. '\n')
 end
 
 local function default_quest_state()
@@ -461,11 +453,7 @@ function quests.get_summary()
 end
 
 local function normalize_text(s)
-    s = tostring(s or '')
-    s = s:gsub('%[%d%d:%d%d:%d%d%]', ' ')
-    s = s:gsub('%c', ' ')
-    s = s:gsub('%s+', ' ')
-    return s:lower()
+    return chatutil.normalize(s)
 end
 
 local function contains(text, needle) return text:find(needle, 1, true) ~= nil end
@@ -486,7 +474,15 @@ local function debounced(key)
     return false
 end
 
-local function buffer_add(line)
+local function buffer_add(line, context)
+    local now = timeutil.now()
+    local mode = tonumber(context and context.mode)
+    if (buffer_last_at and (now - buffer_last_at) > BUFFER_WINDOW)
+            or (buffer_mode ~= nil and mode ~= buffer_mode) then
+        text_buffer = {}
+    end
+    buffer_last_at = now
+    buffer_mode = mode
     text_buffer[#text_buffer + 1] = line
     while #text_buffer > MAX_BUFFER do
         table.remove(text_buffer, 1)
@@ -494,7 +490,11 @@ local function buffer_add(line)
     return table.concat(text_buffer, ' ')
 end
 
-local function buffer_clear() text_buffer = {} end
+local function buffer_clear()
+    text_buffer = {}
+    buffer_last_at = nil
+    buffer_mode = nil
+end
 
 local function promote(quest_id, target_state, reason)
     local q = state.quests[quest_id]
@@ -646,11 +646,12 @@ local function process_quest(text, qdef)
     return false
 end
 
-function quests.on_text(line)
+function quests.on_text(line, context)
     if not state then return end
+    if not chatutil.is_trusted_game_text(context) then return end
     local norm = normalize_text(line)
     if norm == '' then return end
-    local combined = buffer_add(norm)
+    local combined = buffer_add(norm, context)
     local matched_any = false
     for _, qdef in ipairs(CATALOG) do
         if process_quest(combined, qdef) then matched_any = true end
@@ -747,6 +748,8 @@ function quests.init(pname, base_dir)
         state_file = nil
         player_name = nil
         text_buffer = {}
+        buffer_last_at = nil
+        buffer_mode = nil
         debounce_map = {}
         pending_handin = {}
         return
@@ -762,6 +765,8 @@ function quests.init(pname, base_dir)
     state_file = weekly_dir .. 'quests.lua'
     state = normalize_loaded(load_table(state_file))
     text_buffer = {}
+    buffer_last_at = nil
+    buffer_mode = nil
     debounce_map = {}
     pending_handin = {}
     roll_week_if_needed()

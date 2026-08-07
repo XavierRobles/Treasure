@@ -1,11 +1,14 @@
 ---------------------------------------------------------------------------
 -- Treasure · weekly/highwind.lua
 -- Highwind weekly kill tracker (HorizonXI).
--- Signal: "<name> defeats the Highwind." followed by local-player XP gain
--- within XP_CONFIRM_WINDOW seconds.
+-- Signals:
+--   * Official combat-mode defeat/fall message.
+--   * Exact 3000 XP + 3000 gil reward pair inside an Airship zone.
 ---------------------------------------------------------------------------
 
 local fs = ashita.fs
+local persist = require('persist')
+local chatutil = require('chatutil')
 
 local highwind = {
     id = 'highwind',
@@ -15,13 +18,20 @@ local highwind = {
 local SERVER_NAME = 'HorizonXI'
 local MAX_MESSAGES = 6
 local XP_CONFIRM_WINDOW = 5
-local DEFEAT_PATTERN = '^[%w%-_]+%s+defeats%s+the%s+highwind%.?$'
-
+local REWARD_CONFIRM_WINDOW = 5
+local SERVER_DEFEAT_MODES = {
+    [36] = true,  -- You defeat enemy.
+    [37] = true,  -- Party member defeats enemy.
+    [44] = true,  -- Other/pet defeat or enemy falls to the ground.
+    [166] = true, -- Alliance member defeats enemy.
+}
 local state = nil
 local state_file = nil
 local player_name = nil
 local pending_defeat_at = nil
 local pending_defeat_killer = nil
+local pending_reward_xp_at = nil
+local pending_reward_gil_at = nil
 local ui_messages = {}
 
 local function default_state()
@@ -61,25 +71,11 @@ local function serialize(value, indent)
 end
 
 local function load_table(path)
-    local f = io.open(path, 'r')
-    if not f then return nil end
-    local content = f:read('*a')
-    f:close()
-    local loader = loadstring(content)
-    if not loader then return nil end
-    local ok, data = pcall(loader)
-    if ok and type(data) == 'table' then return data end
-    return nil
+    return persist.load_table(path)
 end
 
 local function save_table(path, data)
-    local f = io.open(path, 'w+')
-    if not f then return false end
-    f:write('return ')
-    f:write(serialize(data, 0))
-    f:write('\n')
-    f:close()
-    return true
+    return persist.write_atomic(path, 'return ' .. serialize(data, 0) .. '\n')
 end
 
 local function normalize_loaded(loaded)
@@ -178,18 +174,7 @@ function highwind.get_next_step()
 end
 
 local function normalize_text(s)
-    s = tostring(s or '')
-    -- FFXI color escapes are 2-byte digraphs starting with 0x1E / 0x1F / 0x7F.
-    -- The second byte can be any value (often >31), so a plain %c sweep leaves
-    -- cruft that breaks ^anchored$ patterns. The Highwind boss name is wrapped
-    -- in 0x7F digraphs on HorizonXI, which is the prefix that the previous
-    -- version missed. Mirror libs/sugar/string.strip_colors().
-    s = s:gsub('[\30\31\127].', '')
-    s = s:gsub('[\0-\31\127]', ' ')
-    s = s:gsub('%[%d%d:%d%d:%d%d%]', ' ')
-    s = s:gsub('^%b()%s*', '')
-    s = s:gsub('%s+', ' ')
-    return s:lower():gsub('^%s+', ''):gsub('%s+$', '')
+    return chatutil.normalize(s)
 end
 
 local function match_defeat(text)
@@ -205,11 +190,37 @@ local function match_local_xp_gain(text)
     return first == pn
 end
 
-local function confirm_kill()
+local function match_local_highwind_xp(text)
+    if not player_name or player_name == '' then return false end
+    local first, amount = text:match('^([%w%-_]+)%s+gains%s+(%d+)%s+experience%s+points?%.?$')
+    return first == player_name:lower() and tonumber(amount) == 3000
+end
+
+local function match_highwind_gil(text)
+    local amount = text:match('^obtained%s+(%d+)%s+gil%.?$')
+    return tonumber(amount) == 3000
+end
+
+local function in_airship_zone(context)
+    local zone_name = chatutil.normalize(context and context.zone_name or '')
+    return zone_name:find('airship', 1, true) ~= nil
+end
+
+local function text_mode(context)
+    return tonumber(context and context.mode)
+end
+
+local function clear_pending()
+    pending_defeat_at = nil
+    pending_defeat_killer = nil
+    pending_reward_xp_at = nil
+    pending_reward_gil_at = nil
+end
+
+local function confirm_kill(source)
     if not state then return end
     if state.killedThisWeek then
-        pending_defeat_at = nil
-        pending_defeat_killer = nil
+        clear_pending()
         return
     end
     state.killedThisWeek = true
@@ -217,12 +228,15 @@ local function confirm_kill()
     state.lastKillerName = pending_defeat_killer
     state.confidence = 'auto'
     save()
-    push_message(('Highwind kill confirmed (killer: %s).'):format(pending_defeat_killer or '?'))
-    pending_defeat_at = nil
-    pending_defeat_killer = nil
+    if source == 'reward' then
+        push_message('Highwind kill confirmed (3000 EXP + 3000 gil).')
+    else
+        push_message(('Highwind kill confirmed (killer: %s).'):format(pending_defeat_killer or '?'))
+    end
+    clear_pending()
 end
 
-function highwind.on_text(line)
+function highwind.on_text(line, context)
     if not state then return end
     local norm = normalize_text(line)
     if norm == '' then return end
@@ -231,17 +245,50 @@ function highwind.on_text(line)
 
     local killer = match_defeat(norm)
     if killer then
-        pending_defeat_at = os.time()
-        pending_defeat_killer = killer
+        local mode = text_mode(context)
+        if SERVER_DEFEAT_MODES[mode] then
+            pending_defeat_killer = killer
+            confirm_kill('defeat')
+        elseif not chatutil.is_player_text_mode(mode) then
+            -- Compatibility fallback for an unknown/missing combat mode:
+            -- require the local XP line before accepting the defeat text.
+            pending_defeat_at = os.time()
+            pending_defeat_killer = killer
+        end
+        return
+    end
+
+    if norm == 'the highwind falls to the ground.' or norm == 'the highwind falls to the ground' then
+        local mode = text_mode(context)
+        if SERVER_DEFEAT_MODES[mode] then
+            pending_defeat_killer = 'server'
+            confirm_kill('defeat')
+        elseif not chatutil.is_player_text_mode(mode) then
+            pending_defeat_at = os.time()
+            pending_defeat_killer = 'server'
+        end
         return
     end
 
     if pending_defeat_at and match_local_xp_gain(norm) then
         if (os.time() - pending_defeat_at) <= XP_CONFIRM_WINDOW then
-            confirm_kill()
+            confirm_kill('defeat')
         else
             pending_defeat_at = nil
             pending_defeat_killer = nil
+        end
+    end
+
+    if in_airship_zone(context) then
+        local now = os.time()
+        if match_local_highwind_xp(norm) then
+            pending_reward_xp_at = now
+        elseif match_highwind_gil(norm) then
+            pending_reward_gil_at = now
+        end
+        if pending_reward_xp_at and pending_reward_gil_at
+                and math.abs(pending_reward_xp_at - pending_reward_gil_at) <= REWARD_CONFIRM_WINDOW then
+            confirm_kill('reward')
         end
     end
 end
@@ -252,6 +299,12 @@ function highwind.tick()
     if pending_defeat_at and (os.time() - pending_defeat_at) > XP_CONFIRM_WINDOW then
         pending_defeat_at = nil
         pending_defeat_killer = nil
+    end
+    if pending_reward_xp_at and (os.time() - pending_reward_xp_at) > REWARD_CONFIRM_WINDOW then
+        pending_reward_xp_at = nil
+    end
+    if pending_reward_gil_at and (os.time() - pending_reward_gil_at) > REWARD_CONFIRM_WINDOW then
+        pending_reward_gil_at = nil
     end
 end
 
@@ -298,6 +351,8 @@ function highwind.init(pname, base_dir)
         player_name = nil
         pending_defeat_at = nil
         pending_defeat_killer = nil
+        pending_reward_xp_at = nil
+        pending_reward_gil_at = nil
         return
     end
     if player_name == pname and state ~= nil then
@@ -312,6 +367,8 @@ function highwind.init(pname, base_dir)
     state = normalize_loaded(load_table(state_file))
     pending_defeat_at = nil
     pending_defeat_killer = nil
+    pending_reward_xp_at = nil
+    pending_reward_gil_at = nil
     roll_week_if_needed()
     save()
 end

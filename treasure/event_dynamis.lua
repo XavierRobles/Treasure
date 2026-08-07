@@ -82,8 +82,8 @@ function dynamis.on_leave(sess, opts)
     return nil
 end
 
-function dynamis.on_text(line, sess)
-    parser.handle_line(line, sess)
+function dynamis.on_text(line, sess, context)
+    parser.handle_line(line, sess, context)
 end
 
 return dynamis

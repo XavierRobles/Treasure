@@ -105,6 +105,7 @@ local SETTINGS_OK, settings = pcall(require, 'settings')   -- settings.lua
 local THEMES_OK, ADDON_THEMES = pcall(require, 'ev_themes')  -- palette file
 local store = require('store')
 local timeutil = require('timeutil')
+local persistence = require('persist')
 local event_router = require('ui_event_router')
 local ui_weekly = require('ui_weekly')
 -------------------------------------------------------------------------------
@@ -150,13 +151,7 @@ local function _save_config_file(cfg)
             end
         end)
     end
-    local f, err = io.open(path, 'w+')
-    if not f then
-        return
-    end
-    -- Serializa la tabla y la escribe
-    f:write('return ' .. _dump(cfg) .. '\n')
-    f:close()
+    persistence.write_atomic(path, 'return ' .. _dump(cfg) .. '\n')
 end
 
 local function persist(cfg)
