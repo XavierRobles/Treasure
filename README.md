@@ -20,6 +20,8 @@
 ## 📌 Changelog
 ### v1.1.2 (English)
 
+- Added compatibility with Ashita 4.3 and its ImGui 1.92 `BeginChild` signature while preserving the existing child-window layout and behavior.
+- Reinforced Dynamis time detection and synchronization.
 - Hardened all event and weekly trackers against player-authored chat:
   - Dynamis and Limbus loot, lost-item, timer, route and gate signals now ignore say, shout, party, linkshell, emote and other player channels.
   - Eco-Warrior and Quests now accept only trusted game text.
@@ -48,6 +50,8 @@
 
 ### v1.1.2 (Español)
 
+- Añadida compatibilidad con Ashita 4.3 y la firma `BeginChild` de ImGui 1.92, conservando el diseño y comportamiento existente de las ventanas.
+- Reforzada la detección y sincronización del tiempo de Dynamis.
 - Protegidos todos los eventos y trackers semanales frente a texto escrito por jugadores:
   - Las señales de loot, objetos perdidos, timer, rutas y gates de Dynamis y Limbus ignoran ahora say, shout, party, linkshell, emote y otros canales de jugador.
   - Eco-Warrior y Quests solo aceptan texto fiable generado por el juego.

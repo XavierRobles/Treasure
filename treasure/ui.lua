@@ -353,6 +353,7 @@ local function WF(name)
     return ({ NoTitleBar = 1, NoResize = 2, NoMove = 4,
               NoScrollbar = 8, NoCollapse = 32 })[name] or 0
 end
+
 local function S(name)
     return rawget(imgui, name) or (imgui.StyleVar and imgui.StyleVar[name]) or 0
 end
@@ -2098,7 +2099,7 @@ local function draw_treasure_table (sess, C, cfg, event_id)
         if sv and sv ~= 0 then
             imgui.PushStyleVar(sv, 0)
         end
-        imgui.BeginChild('treasure_scroll_region', { 0, child_h }, false, WF('NoScrollbar'))
+        imgui.BeginChild('treasure_scroll_region', { 0, child_h }, 0, WF('NoScrollbar'))
     end
 
     imgui.Columns(4, 'treasure_columns', true)
@@ -2304,7 +2305,7 @@ local function draw_settings_panel(cfg, C, event_id)
 
                 if #menu_group_defs > 0 then
                     local child_h = math.min(220, math.max(110, (#menu_group_defs * 24) + 8))
-                    imgui.BeginChild('menu_hide_groups_cfg', { 0, child_h }, true)
+                    imgui.BeginChild('menu_hide_groups_cfg', { 0, child_h }, ImGuiChildFlags_Borders, 0)
                     for _, def in ipairs(menu_group_defs) do
                         local key = tostring(def and def.key or '')
                         if key ~= '' then
@@ -3124,10 +3125,7 @@ function ui.render(sess, cfg)
                 hdr_var = hdr_var + 1
             end
 
-            local ok_child, began_child = pcall(imgui.BeginChild, 'treasure_full_header', { 0, header_h }, false, WF('NoScrollbar'))
-            if not ok_child then
-                began_child = imgui.BeginChild('treasure_full_header', { 0, header_h }, false)
-            end
+            local began_child = imgui.BeginChild('treasure_full_header', { 0, header_h }, 0, WF('NoScrollbar'))
             if began_child then
                 imgui.SetCursorPosX(8)
                 imgui.SetCursorPosY(6)
@@ -3230,8 +3228,8 @@ function ui.render(sess, cfg)
                     close_requested = true
                 end
 
-                imgui.EndChild()
             end
+            imgui.EndChild()
 
             if hdr_var > 0 then
                 imgui.PopStyleVar(hdr_var)
@@ -3703,13 +3701,8 @@ function ui.render(sess, cfg)
 
     local full_body_child = false
     if not ui.compact then
-        local ok_child, _ = pcall(imgui.BeginChild, 'treasure_full_body', { 0, 0 }, false)
-        if ok_child then
-            full_body_child = true
-        else
-            imgui.BeginChild('treasure_full_body', { 0, 0 }, false)
-            full_body_child = true
-        end
+        imgui.BeginChild('treasure_full_body', { 0, 0 }, 0, 0)
+        full_body_child = true
     end
 
     if not ui.compact then

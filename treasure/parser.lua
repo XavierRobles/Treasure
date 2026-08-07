@@ -208,6 +208,7 @@ end
 
 local DYN_EXPEL = 'you will be expelled from dynamis in%s+(%d+)%s+(%a+)'
 local DYN_EXT   = 'your stay in dynamis has been extended by%s+(%d+)%s+(%a+)'
+local DYN_REMAIN = 'you have%s+(%d+)%s+(minutes?)%s+%(earth time%)%s+remaining in dynamis'
 
 local function unit_to_seconds(n, unit)
     n = tonumber(n) or 0
@@ -260,6 +261,9 @@ local function handle_dynamis_timer_line(line, s)
     ensure_dynamis_timer(s)
 
     local n1, u1 = l:match(DYN_EXPEL)
+    if not n1 then
+        n1, u1 = l:match(DYN_REMAIN)
+    end
     if n1 and u1 then
         local now = os.time()
         local rem = unit_to_seconds(n1, u1)
