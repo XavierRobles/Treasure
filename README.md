@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.1.2\
+**Version:** 1.1.3\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -18,10 +18,18 @@
 ---
 
 ## 📌 Changelog
-### v1.1.2 (English)
+### v1.1.3 (English)
 
 - Added compatibility with Ashita 4.3 and its ImGui 1.92 `BeginChild` signature while preserving the existing child-window layout and behavior.
 - Reinforced Dynamis time detection and synchronization.
+
+### v1.1.3 (Español)
+
+- Añadida compatibilidad con Ashita 4.3 y la firma `BeginChild` de ImGui 1.92, conservando el diseño y comportamiento existente de las ventanas.
+- Reforzada la detección y sincronización del tiempo de Dynamis.
+
+### v1.1.2 (English)
+
 - Hardened all event and weekly trackers against player-authored chat:
   - Dynamis and Limbus loot, lost-item, timer, route and gate signals now ignore say, shout, party, linkshell, emote and other player channels.
   - Eco-Warrior and Quests now accept only trusted game text.
@@ -50,8 +58,6 @@
 
 ### v1.1.2 (Español)
 
-- Añadida compatibilidad con Ashita 4.3 y la firma `BeginChild` de ImGui 1.92, conservando el diseño y comportamiento existente de las ventanas.
-- Reforzada la detección y sincronización del tiempo de Dynamis.
 - Protegidos todos los eventos y trackers semanales frente a texto escrito por jugadores:
   - Las señales de loot, objetos perdidos, timer, rutas y gates de Dynamis y Limbus ignoran ahora say, shout, party, linkshell, emote y otros canales de jugador.
   - Eco-Warrior y Quests solo aceptan texto fiable generado por el juego.
