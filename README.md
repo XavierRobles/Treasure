@@ -22,11 +22,13 @@
 
 - Added compatibility with Ashita 4.3 and its ImGui 1.92 `BeginChild` signature while preserving the existing child-window layout and behavior.
 - Reinforced Dynamis time detection and synchronization.
+- Fixed an Eco-War regression that prevented valid NPC dialogue from reaching its tracker while keeping player-authored imitations rejected.
 
 ### v1.1.3 (Español)
 
 - Añadida compatibilidad con Ashita 4.3 y la firma `BeginChild` de ImGui 1.92, conservando el diseño y comportamiento existente de las ventanas.
 - Reforzada la detección y sincronización del tiempo de Dynamis.
+- Corregida una regresión de Eco-War que impedía procesar diálogos válidos de NPC, manteniendo el rechazo de imitaciones escritas por jugadores.
 
 ### v1.1.2 (English)
 

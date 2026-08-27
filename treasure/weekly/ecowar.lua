@@ -31,6 +31,15 @@ local CITY_NPCS = {
     windy = 'Lumomo in Windurst',
     bastok = 'Raifa in Bastok',
 }
+local TRUSTED_NPC_SPEAKERS = {
+    ['eeko-weeko'] = true,
+    ['norejaie'] = true,
+    ['lumomo'] = true,
+    ['raifa'] = true,
+    ['rojaireaut'] = true,
+    ['ahko mhalijikhari'] = true,
+    ['degga'] = true,
+}
 local PHASES = {
     none = true,
     accepted = true,
@@ -61,7 +70,6 @@ local state_file = nil
 local player_name = nil
 local text_buffer = {}
 local buffer_last_at = nil
-local buffer_mode = nil
 local debounce_map = {}
 local ui_messages = {}
 
@@ -324,15 +332,12 @@ local function debounced(key)
     return false
 end
 
-local function buffer_add(line, context)
+local function buffer_add(line)
     local now = timeutil.now()
-    local mode = tonumber(context and context.mode)
-    if (buffer_last_at and (now - buffer_last_at) > BUFFER_WINDOW)
-            or (buffer_mode ~= nil and mode ~= buffer_mode) then
+    if buffer_last_at and (now - buffer_last_at) > BUFFER_WINDOW then
         text_buffer = {}
     end
     buffer_last_at = now
-    buffer_mode = mode
     text_buffer[#text_buffer + 1] = line
     while #text_buffer > MAX_BUFFER do
         table.remove(text_buffer, 1)
@@ -343,7 +348,11 @@ end
 local function buffer_clear()
     text_buffer = {}
     buffer_last_at = nil
-    buffer_mode = nil
+end
+
+local function is_known_npc_line(text)
+    local speaker = tostring(text or ''):match('^%s*([^:]-)%s*:%s*')
+    return speaker ~= nil and TRUSTED_NPC_SPEAKERS[speaker] == true
 end
 
 local function set_phase_internal(eco, phase)
@@ -531,10 +540,11 @@ end
 
 function ecowar.on_text(line, context)
     if not state then return end
-    if not chatutil.is_trusted_game_text(context) then return end
+    if context and context.injected == true then return end
     local norm = normalize_text(line)
     if norm == '' then return end
-    local combined = buffer_add(norm, context)
+    if not chatutil.is_trusted_game_text(context) and not is_known_npc_line(norm) then return end
+    local combined = buffer_add(norm)
     if process_triggers(combined) then buffer_clear() end
 end
 
@@ -622,7 +632,6 @@ function ecowar.init(pname, base_dir)
         player_name = nil
         text_buffer = {}
         buffer_last_at = nil
-        buffer_mode = nil
         debounce_map = {}
         return
     end
@@ -639,7 +648,6 @@ function ecowar.init(pname, base_dir)
     state = normalize_loaded(load_table(state_file))
     text_buffer = {}
     buffer_last_at = nil
-    buffer_mode = nil
     debounce_map = {}
     roll_week_if_needed()
     save()

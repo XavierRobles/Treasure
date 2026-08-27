@@ -6,7 +6,6 @@
 local ecowar = require('weekly.ecowar')
 local highwind = require('weekly.highwind')
 local quests = require('weekly.quests')
-local chatutil = require('chatutil')
 
 local router = {}
 
@@ -62,7 +61,6 @@ end
 
 function router.on_text(line, context)
     if not line or line == '' then return end
-    if not chatutil.is_trusted_game_text(context) then return end
     local raw = tostring(line):gsub('\r\n', '\n'):gsub('\r', '\n')
     -- Same un-glue as parser.handle_line: split glued timestamped chat lines.
     raw = raw:gsub('(%S)(%[%d%d:%d%d:%d%d%])', '%1\n%2')
