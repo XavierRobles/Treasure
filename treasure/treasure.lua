@@ -10,19 +10,38 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.1.3'
+addon.version = '1.1.4'
 
 require('common')
+-- Ashita can retain required Lua modules across an addon reload. Refresh all
+-- Treasure combat modules so deployed fixes take effect without restarting XI.
+local treasure_reload_modules = {}
+for module_name in pairs(package.loaded) do
+    if module_name == 'ui' or module_name == 'ui_combat'
+            or module_name == 'blue_learn_alert' or module_name == 'sound_volume'
+            or module_name:match('^combat%.') then
+        treasure_reload_modules[#treasure_reload_modules + 1] = module_name
+    end
+end
+for _, module_name in ipairs(treasure_reload_modules) do
+    package.loaded[module_name] = nil
+end
 local core = require('core')
 local parser = require('parser')
 local store = require('store')
 local ui = require('ui')
+local ui_combat = require('ui_combat')
+local combat = require('combat.init')
+local combat_settings = require('combat.settings')
 local event_router = require('event_router')
 local weekly_router = require('weekly_router')
 local ecowar = require('weekly.ecowar')
 local highwind = require('weekly.highwind')
 local timeutil = require('timeutil')
 local persistence = require('persist')
+local blue_learn_alert = require('blue_learn_alert')
+local sound_volume = require('sound_volume')
+local chatutil = require('chatutil')
 local fs = ashita.fs
 local chat = require('chat')
 
@@ -104,6 +123,18 @@ local function dispatch_event_packet(direction, packet)
         handler.on_packet_out(packet, session)
     end
 end
+
+combat.subscribe('treasure_event_trackers', function(event)
+    -- In Full mode the original action text is intentionally removed. Feed
+    -- Treasure's event trackers from the untouched structured action first.
+    if not combat.is_replacing_chat() or not (session and session.is_event) then
+        return
+    end
+    local handler = event_router.get(session_event_id(session))
+    if handler and handler.on_combat_event then
+        handler.on_combat_event(event, session)
+    end
+end)
 
 local function close_active_session(reason)
     if not (session and session.is_event) then
@@ -289,13 +320,36 @@ end
 
 
 ------------------------------------------------------------------ helpers
+local ui_hidden_signature_addr = 0
+local ui_hidden_signature_retry_at = 0
+local menu_signature_addr = 0
+local menu_signature_retry_at = 0
+
+local function cached_signature(current, retry_at, pattern, offset)
+    if current ~= 0 then
+        return current, retry_at
+    end
+    local now = timeutil.now()
+    if now < (tonumber(retry_at) or 0) then
+        return 0, retry_at
+    end
+    local found = ashita.memory.find('FFXiMain.dll', 0, pattern, offset or 0, 0)
+    if found == 0 then
+        return 0, now + 5
+    end
+    return found, 0
+end
+
 local function is_ui_fully_hidden()
-    local addr = ashita.memory.find('FFXiMain.dll', 0,
-            '8B4424046A016A0050B9????????E8????????F6D81BC040C3', 0, 0)
-    if addr == 0 then
+    ui_hidden_signature_addr, ui_hidden_signature_retry_at = cached_signature(
+        ui_hidden_signature_addr,
+        ui_hidden_signature_retry_at,
+        '8B4424046A016A0050B9????????E8????????F6D81BC040C3',
+        0)
+    if ui_hidden_signature_addr == 0 then
         return false
     end
-    local ptr = ashita.memory.read_uint32(addr + 10)
+    local ptr = ashita.memory.read_uint32(ui_hidden_signature_addr + 10)
     return ptr ~= 0 and ashita.memory.read_uint8(ptr + 0xB4) == 1
 end
 
@@ -432,13 +486,16 @@ local function ensure_menu_hide_cfg(cfg)
 end
 
 local function get_active_game_menu_id()
-    local addr = ashita.memory.find('FFXiMain.dll', 0,
-            '8B480C85C974??8B510885D274??3B05', 16, 0)
-    if addr == 0 then
+    menu_signature_addr, menu_signature_retry_at = cached_signature(
+        menu_signature_addr,
+        menu_signature_retry_at,
+        '8B480C85C974??8B510885D274??3B05',
+        16)
+    if menu_signature_addr == 0 then
         return ''
     end
 
-    local ptr = ashita.memory.read_uint32(addr)
+    local ptr = ashita.memory.read_uint32(menu_signature_addr)
     if ptr == 0 then
         return ''
     end
@@ -506,6 +563,8 @@ end
 ------------------------------------------------------------------ default cfg
 local DEFAULT_CONFIG = {
     visible = true, theme = 'Default', alpha = 0.90, timeout = 30,
+    blue_magic_learn_alert = true,
+    blue_magic_learn_volume = 100,
     menu_hide = {
         hide_when_ui_hidden = true,
         hide_when_game_menu = true,
@@ -610,6 +669,8 @@ local function ensure_settings()
     if not pname or pname == '' or pname == 'UNKNOWN' then
         local loaded = _clone_cfg(DEFAULT_CONFIG)
         ensure_menu_hide_cfg(loaded)
+        combat_settings.ensure(loaded)
+        combat.configure(loaded.combat_log)
         loaded.default_mode = loaded.default_mode or 'compact'
         ui.compact = (loaded.default_mode ~= 'full')
         return loaded
@@ -651,9 +712,18 @@ local function ensure_settings()
         cfg = _clone_cfg(DEFAULT_CONFIG)
     end
 
+    if cfg.blue_magic_learn_alert == nil then
+        cfg.blue_magic_learn_alert = true
+    end
+    cfg.blue_magic_learn_volume = math.max(0,
+            math.min(100, tonumber(cfg.blue_magic_learn_volume) or 100))
+
     ensure_menu_hide_cfg(cfg)
+    combat_settings.ensure(cfg)
+    combat.configure(cfg.combat_log)
     cfg.player_name = pname
     cfg._config_file = cfg_file
+    combat.set_character_context(char_dir)
     cfg.default_mode = cfg.default_mode or 'compact'
     ui.compact = (cfg.default_mode ~= 'full')
     weekly_router.init_all(pname, char_dir)
@@ -690,6 +760,7 @@ local function reset_state_for_new_char()
     end
     save_character_settings(cfg)
     cfg, session, idle_session = nil, nil, nil
+    combat.configure(nil)
     lastPool, lastSave = 0, 0
     ui.history_session, ui.history_idx = nil, 0
     ui._layout_mode, ui._tre_init = nil, false
@@ -886,6 +957,64 @@ ashita.events.register('command', 'treasure_cmd', function(e)
 
     -- /tr c | /tr currency | /tr who
     local sub = (args[2] or ''):lower()
+
+    -- /tr combat ... -> optional Combat Log configuration.
+    if sub == 'combat' or sub == 'combatlog' then
+        local action = (args[3] or 'config'):lower()
+        if action == 'config' or action == 'show' then
+            ui_combat.set_open(true)
+            return
+        end
+        if action == 'on' then
+            combat_settings.set_enabled(cfg, true)
+        elseif action == 'off' then
+            combat_settings.set_enabled(cfg, false)
+        elseif action == 'reset' then
+            combat_settings.reset(cfg)
+        elseif action == 'debug' then
+            local value = (args[4] or ''):lower()
+            if value ~= 'on' and value ~= 'off' then
+                print_local('Combat Log: usage /tr combat debug <on|off>')
+                return
+            end
+            cfg.combat_log.diagnostics = (value == 'on')
+        elseif action == 'audit' then
+            local value = (args[4] or ''):lower()
+            if value ~= 'on' and value ~= 'off' then
+                print_local('Combat Log: usage /tr combat audit <on|off>')
+                return
+            end
+            cfg.combat_log.capture_all = (value == 'on')
+        elseif action == 'status' then
+            local cl = cfg.combat_log
+            print_local(('Combat Log: %s, preset %s.'):format(cl.enabled and 'enabled' or 'off', cl.preset))
+            local combat_stats = combat.get_stats()
+            print_local(('Combat: all=%d last=0x%03X action028=%d decoded=%d errors=%d queued=%d pending=%d output=%d.'):format(
+                combat_stats.packets_all, combat_stats.last_packet_id, combat_stats.packets_028,
+                combat_stats.decoded, combat_stats.decode_errors,
+                combat_stats.queued, combat_stats.pending, combat_stats.lines_output))
+            if combat_stats.last_error ~= '' then
+                print_local('Combat last error: ' .. combat_stats.last_error)
+            end
+            print_local(('Combat capture: signatures=%d observations=%d supported=%d unsupported=%d/%d dropped=%d.'):format(
+                combat_stats.unknown_signatures, combat_stats.unknown_observations,
+                combat_stats.supported_observations, combat_stats.unsupported_signatures,
+                combat_stats.unsupported_observations, combat_stats.unknown_dropped))
+            if combat_stats.capture_all then
+                print_local('Complete combat audit: active -> ' .. tostring(combat_stats.audit_path or ''))
+            end
+            return
+        else
+            print_local('Combat Log: usage /tr combat <config|on|off|audit|status|reset>')
+            return
+        end
+        combat_settings.ensure(cfg)
+        combat.configure(cfg.combat_log)
+        save_character_settings(cfg)
+        print_local(('Combat Log: %s.'):format(cfg.combat_log.enabled and 'enabled' or 'off'))
+        return
+    end
+
     local want_totals = (sub == 'c') or (sub == 'currency') or (sub == 'cur')
     local want_who = (sub == 'who')
 
@@ -1082,7 +1211,49 @@ end)
 
 
 ------------------------------------------------------------------ login/logout
+local last_blue_magic_alert = { name = '', timestamp = 0 }
+
+local function emit_blue_magic_learned(spell_id, fallback_name)
+    if cfg ~= nil and cfg.blue_magic_learn_alert == false then
+        return
+    end
+
+    local spell = spell_id ~= nil
+            and AshitaCore:GetResourceManager():GetSpellById(spell_id) or nil
+    local spell_name = (spell ~= nil and spell.Name ~= nil and spell.Name[1])
+            or tostring(fallback_name or spell_id or '')
+    if spell_name == '' then
+        return
+    end
+
+    local now = timeutil.now()
+    local normalized_name = spell_name:lower()
+    if last_blue_magic_alert.name == normalized_name
+            and (now - last_blue_magic_alert.timestamp) < 3 then
+        return
+    end
+    last_blue_magic_alert.name = normalized_name
+    last_blue_magic_alert.timestamp = now
+
+    print(chat.header('Treasure'):append(chat.success(
+            'Learned new Blue Magic spell: ' .. spell_name)))
+    sound_volume.play(addon.path .. '\\sound\\Learned.wav',
+            cfg and cfg.blue_magic_learn_volume or 100)
+end
+
+local function notify_blue_magic_learned(e)
+    local entity = GetPlayerEntity()
+    local spell_id = blue_learn_alert.learned_spell(e, entity and entity.TargetIndex)
+    if spell_id ~= nil then
+        emit_blue_magic_learned(spell_id)
+    end
+end
+
 ashita.events.register('packet_in', 'login_detector', function(e)
+    -- Keep the learning alert independent from combat decoding. In particular,
+    -- a failure or future early-exit in the combat path must not swallow 0x029.
+    notify_blue_magic_learned(e)
+    combat.on_packet_in(e)
     if e.id == 0x00A then
         -- login
         local ent = GetPlayerEntity();
@@ -1113,11 +1284,15 @@ end)
 
 ------------------------------------------------------------------ main loop
 local rm = AshitaCore:GetResourceManager()
+local present_stage = 'idle'
 ashita.events.register('d3d_present', 'treasure_present', function()
+    present_stage = 'world_check'
     if not in_world() then
+        present_stage = 'idle'
         return
     end
 
+    present_stage = 'settings'
     if not cfg then
         cfg = ensure_settings()
     end
@@ -1130,8 +1305,13 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         end
     end
     local now_tick = timeutil.now()
+    present_stage = 'combat_tick'
+    combat.on_tick(now_tick)
+    present_stage = 'sound_tick'
+    sound_volume.tick()
 
     ---------------------------------------------------------------- session
+    present_stage = 'session'
     local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
     local zoneName = rm:GetString('zones.names', zid) or ('Zone ' .. zid)
     local active_event_id, active_handler = event_router.match_zone(zid)
@@ -1222,16 +1402,35 @@ ashita.events.register('d3d_present', 'treasure_present', function()
         lastWeeklyTick = now_tick
     end
 
+    present_stage = 'party_chat_queue'
     process_party_chat_queue()
-    ensure_menu_hide_cfg(cfg)
-    local hide_ui = (cfg.menu_hide.hide_when_ui_hidden ~= false) and is_ui_fully_hidden()
-    local hide_menu = is_hiding_menu_active(cfg)
+
+    -- The menu visibility helpers follow raw FFXI pointer chains. During a
+    -- complete combat audit stability and evidence collection take priority;
+    -- avoid those optional reads because a transient game-menu pointer can
+    -- raise a native access violation that Lua's pcall cannot catch.
+    local allow_raw_menu_reads = not (cfg.combat_log and cfg.combat_log.capture_all == true)
+    present_stage = 'ui_hidden_memory'
+    local hide_ui = allow_raw_menu_reads
+            and (cfg.menu_hide.hide_when_ui_hidden ~= false)
+            and is_ui_fully_hidden()
+    present_stage = 'game_menu_memory'
+    local hide_menu = allow_raw_menu_reads and is_hiding_menu_active(cfg)
     local hide = hide_ui or hide_menu
     if cfg.visible and not hide then
+        present_stage = 'main_ui_render'
         ui.render(draw_session, cfg)
+    end
+    if not hide then
+        present_stage = 'combat_ui_render'
+        ui_combat.render(cfg, function()
+            combat.configure(cfg.combat_log)
+            save_character_settings(cfg)
+        end)
     end
 
     if session and session.is_event and not ui.history_session then
+        present_stage = 'session_persist'
         if (now_tick - lastSave) > 30 then
             local can_persist = true
             if session_event_id(session) == 'limbus' and session.limbus_run_started ~= true then
@@ -1248,10 +1447,12 @@ ashita.events.register('d3d_present', 'treasure_present', function()
     end
 
     if ui.compact ~= (cfg.default_mode ~= 'full') and (now_tick - lastPrefSave) > 1 then
+        present_stage = 'preference_persist'
         cfg.default_mode = ui.compact and 'compact' or 'full'
         save_character_settings(cfg);
         lastPrefSave = now_tick
     end
+    present_stage = 'idle'
 end)
 
 ------------------------------------------------------------------ zone salida
@@ -1270,6 +1471,39 @@ end)
 
 ------------------------------------------------------------------ texto chat
 ashita.events.register('text_in', 'treasure_text', function(e)
+    local original_message = e.message or e.message_modified
+    -- Horizon has emitted this native system line under more than one chat
+    -- mode. The anchored local-player matcher rejects ordinary player chat,
+    -- while injected addon output remains excluded.
+    if e.injected ~= true then
+        local entity = GetPlayerEntity()
+        local player_name = entity and entity.Name
+        local candidates = { original_message, e.message_modified }
+        local seen = {}
+        for _, candidate in ipairs(candidates) do
+            if type(candidate) == 'string' and not seen[candidate] then
+                seen[candidate] = true
+                local learned_name = blue_learn_alert.learned_spell_from_text(candidate, player_name)
+                if learned_name == nil then
+                    local ok, parsed_message = pcall(function()
+                        return AshitaCore:GetChatManager():ParseAutoTranslate(candidate, true)
+                    end)
+                    if ok and type(parsed_message) == 'string' then
+                        learned_name = blue_learn_alert.learned_spell_from_text(parsed_message, player_name)
+                    end
+                end
+                if learned_name ~= nil then
+                    emit_blue_magic_learned(nil, learned_name)
+                    break
+                end
+            end
+        end
+    end
+
+    combat.on_text_in(e)
+    if combat.is_own_line(original_message) then
+        return
+    end
     local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0)
     local text_context = {
         mode = e.mode,
@@ -1277,20 +1511,32 @@ ashita.events.register('text_in', 'treasure_text', function(e)
         zone_name = rm:GetString('zones.names', zid) or '',
     }
     if not e.injected then
-        weekly_router.on_text(e.message_modified or e.message, text_context)
+        weekly_router.on_text(original_message, text_context)
     end
     if session and session.is_event then
         local ev_id = session_event_id(session)
         local handler = event_router.get(ev_id)
         if handler and handler.on_text then
-            handler.on_text(e.message_modified or e.message, session, text_context)
+            handler.on_text(original_message, session, text_context)
         else
-            parser.handle_line(e.message_modified or e.message, session, text_context)
+            parser.handle_line(original_message, session, text_context)
         end
     end
 end)
 
 ashita.events.register('unload', 'treasure_unload', function()
+    -- A native exception aborts d3d_present before it can reset this marker.
+    -- Preserve the last entered stage so the next occurrence is actionable.
+    if present_stage ~= 'idle' and cfg and type(cfg._config_file) == 'string' then
+        local diagnostic_path = cfg._config_file:match('^(.*[\\/])')
+        if diagnostic_path then
+            local diagnostic = io.open(diagnostic_path .. 'present_failure.log', 'a')
+            if diagnostic then
+                diagnostic:write(string.format('%s\t%s\n', os.date('%Y-%m-%d %H:%M:%S'), present_stage))
+                diagnostic:close()
+            end
+        end
+    end
     if session and session.is_event then
         local can_persist = session_event_id(session) ~= 'limbus'
                 or session.limbus_run_started == true
@@ -1301,4 +1547,6 @@ ashita.events.register('unload', 'treasure_unload', function()
     weekly_router.save_all()
     save_character_settings(cfg)
     party_chat_queue = {}
+    sound_volume.shutdown()
+    combat.shutdown()
 end)

@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.1.3\
+**Version:** 1.1.4\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -17,7 +17,85 @@
 
 ---
 
+## Combat Log
+
+Treasure includes an optional Combat Log that is **off by default**. Open its per-character visual configurator with:
+
+```text
+/tr combat config
+```
+
+The interface includes a single enable switch, presets, per-group category filters, grouping controls, display details, semantic colors and a live preview. Quick commands are also available:
+
+```text
+/tr combat on|off
+/tr combat status
+/tr combat reset
+```
+
+When enabled, Treasure replaces the game's combat chat with condensed, easier-to-read lines. Messages it does not support keep the original game text, and non-combat chat and system messages are never touched. Filters can be configured independently for you, party members, alliance members, other players and enemies.
+
+Turning the Combat Log off immediately restores the original game combat chat. Everything runs locally on your PC: no combat messages or settings are ever sent to the server.
+
 ## 📌 Changelog
+### v1.1.4 (English)
+
+- Added the optional **Combat Log**, disabled by default and controlled with a single on/off switch. Turning it off immediately restores the original game combat chat.
+- Added a clear visual configurator with presets and a live preview.
+  - Every Combat Log option now has a hover explanation, including presets, filters, grouping, latency, details, colors, diagnostics and reset.
+  - Filters can be adjusted separately for **You**, **Party**, **Alliance**, **Other players** and **Enemies**.
+  - Each group has independent options for misses, defenses, damage dealt, damage received, actions, HP gained and status effects.
+- Added a compact gear button beside Dynamis, Limbus and Weekly. It opens a shared Settings view with General, Dynamis, Limbus, Weekly and Combat Log sections without making the compact window taller.
+- Reduced combat-chat clutter by combining repeated hits, multi-hit attacks and matching multi-target results into easier-to-read lines and totals.
+- Reduced the default grouping delay from 250 ms to 100 ms and made queued combat bursts process faster, while keeping the delay adjustable from the interface.
+- Improved Combat Log performance and smoothness, reducing the work Treasure does each frame.
+- Combat lines now identify players and enemies more reliably, and Central Apollyon Gunpod HP updates faster.
+- Repeated identical actions are no longer mistaken for duplicates and dropped, and unsupported messages always keep the original game text.
+- Added fully configurable combat colors:
+  - Party positions **P1–P6** keep fixed colors for easier recognition.
+  - Damage and HP loss use red, healing uses green, actions use bright yellow and critical hits use orange by default.
+  - Every color category can be changed or disabled independently.
+- Pets now inherit their owner's group, filters and party-position color, including pets belonging to Party and Alliance members.
+- Magic Burst hits are now shown correctly in the Combat Log, even when several targets are hit at the same time.
+- Added a **Blue Magic learn alert**: when you learn a new Blue Magic spell, Treasure announces the spell in chat and plays a sound.
+  - New **Notifications** section in Settings with an on/off switch, an **Alert volume** slider (0–100%) and a **Test sound** button.
+  - At 0% volume the chat message still appears but no sound is played.
+- Weekly now includes a character selector beside the window title, without using extra vertical space.
+  - It shows the logged-in character by default and can display another saved character's Eco-War, Highwind and quest progress.
+  - Other characters are strictly read-only: recent triggers and manual controls remain attached to the logged-in character, and every reload returns the selector to Current.
+- Combat Log processing and configuration remain entirely local; Treasure does not send combat messages or settings to the server.
+- Dynamis Personal Steal and Limbus Pod Ejection tracking now use the original internal combat event in Full mode, so replacing the visible chat cannot interrupt their counters.
+- Fixed the red ImGui error that appeared when opening Dynamis Management outside an active event.
+
+### v1.1.4 (Español)
+
+- Añadido el **Combat Log** opcional, desactivado por defecto y controlado mediante un único interruptor. Al desactivarlo se recupera inmediatamente el chat de combate original del juego.
+- Añadido un configurador visual claro con presets y vista previa en directo.
+  - Cada opción del Combat Log incluye ahora una explicación al pasar el ratón, incluidos presets, filtros, agrupación, latencia, detalles, colores, diagnóstico y reset.
+  - Los filtros pueden ajustarse por separado para **Tú**, **Party**, **Alianza**, **Otros jugadores** y **Enemigos**.
+  - Cada grupo dispone de opciones independientes para fallos, defensas, daño causado, daño recibido, acciones, HP ganado y efectos de estado.
+- Añadido un botón compacto con forma de rueda junto a Dynamis, Limbus y Weekly. Abre una vista común de Settings con secciones General, Dynamis, Limbus, Weekly y Combat Log sin aumentar la altura de la ventana compacta.
+- Reducido el ruido del chat de combate agrupando golpes repetidos, ataques multigolpe y resultados iguales sobre varios objetivos en líneas y totales más fáciles de leer.
+- Reducido el retraso de agrupación predeterminado de 250 ms a 100 ms y acelerado el procesamiento de ráfagas de mensajes, manteniendo el tiempo ajustable desde la interfaz.
+- Mejorado el rendimiento y la fluidez del Combat Log, reduciendo el trabajo que hace Treasure en cada frame.
+- Las líneas de combate identifican ahora a jugadores y enemigos de forma más fiable, y la vida del Gunpod en Central Apollyon se actualiza más rápido.
+- Las acciones idénticas repetidas ya no se confunden con duplicados ni se descartan, y los mensajes no soportados conservan siempre el texto original del juego.
+- Añadidos colores de combate completamente configurables:
+  - Las posiciones **P1–P6** mantienen colores fijos para reconocer rápidamente a cada miembro.
+  - Por defecto, el daño y la pérdida de HP aparecen en rojo, la curación en verde, las acciones en amarillo intenso y los golpes críticos en naranja.
+  - Cada categoría de color puede cambiarse o desactivarse de forma independiente.
+- Los pets heredan ahora el grupo, los filtros y el color de posición de su dueño, incluidos los pets de miembros de Party y Alianza.
+- Los golpes con Magic Burst se muestran ahora correctamente en el Combat Log, incluso cuando se golpea a varios objetivos a la vez.
+- Añadida una **alerta de Blue Magic aprendida**: cuando aprendes un nuevo hechizo de Blue Magic, Treasure lo anuncia en el chat y reproduce un sonido.
+  - Nueva sección **Notifications** en Settings con un interruptor de activación, un deslizador de **Alert volume** (0–100%) y un botón **Test sound**.
+  - Con el volumen a 0% el mensaje del chat sigue apareciendo pero no se reproduce sonido.
+- Weekly incluye ahora un selector de personaje junto al título de la ventana, sin ocupar espacio vertical adicional.
+  - Muestra por defecto el personaje conectado y permite consultar el progreso de Eco-War, Highwind y misiones de otros personajes guardados.
+  - Los demás personajes son estrictamente de solo lectura: los avisos recientes y controles manuales permanecen asociados al personaje conectado, y cada reload devuelve el selector a Current.
+- El Combat Log y su configuración funcionan completamente en local; Treasure no envía mensajes de combate ni ajustes al servidor.
+- Personal Steal de Dynamis y Pod Ejection de Limbus usan ahora el evento de combate interno original en modo Full, evitando que el reemplazo del chat visible interrumpa sus contadores.
+- Corregido el error rojo de ImGui que aparecía al abrir Management de Dynamis fuera de un evento activo.
+
 ### v1.1.3 (English)
 
 - Added compatibility with Ashita 4.3 and its ImGui 1.92 `BeginChild` signature while preserving the existing child-window layout and behavior.

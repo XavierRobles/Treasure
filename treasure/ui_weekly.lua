@@ -6,6 +6,7 @@
 local ecowar = require('weekly.ecowar')
 local highwind = require('weekly.highwind')
 local quests = require('weekly.quests')
+local viewer = require('weekly.viewer')
 
 local ui_weekly = {}
 
@@ -15,6 +16,82 @@ local ECO_DISPLAY = {
     bastok = 'Bastok',
 }
 local ECO_ORDER = { 'sandy', 'windy', 'bastok' }
+
+local current_character = nil
+local selected_character = nil
+local character_list = nil
+local selected_view = nil
+local view_error = nil
+
+local function refresh_characters(name)
+    character_list = viewer.list(name)
+end
+
+local function ensure_character_context(ctx)
+    local name = tostring(ctx.cfg and ctx.cfg.player_name or 'Current')
+    if current_character ~= name then
+        current_character = name
+        selected_character = nil
+        selected_view = nil
+        view_error = nil
+        refresh_characters(name)
+    elseif character_list == nil then
+        refresh_characters(name)
+    end
+end
+
+local function select_character(name)
+    if not name or name == '' or name:lower() == tostring(current_character):lower() then
+        selected_character = nil
+        selected_view = nil
+        view_error = nil
+        return
+    end
+    local raw, load_error = viewer.load(name)
+    if not raw then
+        view_error = tostring(load_error or 'could not load character')
+        return
+    end
+    selected_character = name
+    selected_view = {
+        ecowar = ecowar.prepare_view(raw.ecowar, name),
+        highwind = highwind.prepare_view(raw.highwind, name),
+        quests = quests.prepare_view(raw.quests, name),
+    }
+    view_error = nil
+end
+
+local function viewed_states(ctx)
+    ensure_character_context(ctx)
+    if selected_character and selected_view then
+        return selected_view.ecowar, selected_view.highwind, selected_view.quests, false
+    end
+    return ecowar.get_state(), highwind.get_state(), quests.get_state(), true
+end
+
+function ui_weekly.render_character_selector(ctx)
+    local imgui = ctx.imgui
+    ensure_character_context(ctx)
+    local preview = selected_character
+            and (tostring(selected_character) .. ' (Read-only)')
+            or (tostring(current_character) .. ' (Current)')
+    imgui.SetNextItemWidth(180)
+    if imgui.BeginCombo('##weekly_character_header', preview) then
+        refresh_characters(current_character)
+        local current_label = 'Current - ' .. tostring(current_character)
+        if imgui.Selectable(current_label, selected_character == nil) then
+            select_character(nil)
+        end
+        for _, name in ipairs(character_list or {}) do
+            if name:lower() ~= tostring(current_character):lower() then
+                if imgui.Selectable(name, selected_character == name) then
+                    select_character(name)
+                end
+            end
+        end
+        imgui.EndCombo()
+    end
+end
 
 local function fmt_reset_remaining(next_ts)
     local now = os.time()
@@ -37,11 +114,11 @@ end
 --------------------------------------------------------------------
 -- Eco-War tab
 --------------------------------------------------------------------
-local function draw_ecowar_status_table(ctx)
+local function draw_ecowar_status_table(ctx, st)
     local imgui = ctx.imgui
     local C = ctx.C
     local TF_BORDER = ctx.TF_BORDER
-    local st = ecowar.get_state()
+    st = st or ecowar.get_state()
     if not st then
         imgui.TextDisabled('Eco-Warrior state not loaded.')
         return
@@ -52,8 +129,8 @@ local function draw_ecowar_status_table(ctx)
     imgui.TextDisabled('| Reset in ' .. fmt_reset_remaining(ecowar.next_reset_timestamp()))
 
     imgui.Separator()
-    imgui.TextUnformatted(ecowar.get_summary())
-    imgui.TextColored(C.QTY or C.ITEM, 'Next: ' .. ecowar.get_next_step())
+    imgui.TextUnformatted(ecowar.get_summary(st))
+    imgui.TextColored(C.QTY or C.ITEM, 'Next: ' .. ecowar.get_next_step(st))
     imgui.Separator()
 
     if imgui.BeginTable('tbl_ecowar_status', 3, TF_BORDER) then
@@ -63,7 +140,7 @@ local function draw_ecowar_status_table(ctx)
         imgui.TableHeadersRow()
 
         for _, eco in ipairs(ECO_ORDER) do
-            local status = ecowar.get_status_for_eco(eco)
+            local status = ecowar.get_status_for_eco(eco, st)
             local color
             if status == 'ACTIVE' then
                 color = C.CUR or C.QTY
@@ -83,7 +160,7 @@ local function draw_ecowar_status_table(ctx)
             imgui.TableSetColumnIndex(1)
             imgui.TextColored(color, status)
             imgui.TableSetColumnIndex(2)
-            imgui.TextDisabled(ecowar.current_target_npc(eco) or '')
+            imgui.TextDisabled(ecowar.current_target_npc(eco, st) or '')
         end
         imgui.EndTable()
     end
@@ -109,11 +186,11 @@ end
 --------------------------------------------------------------------
 -- Highwind tab
 --------------------------------------------------------------------
-local function draw_highwind_status(ctx)
+local function draw_highwind_status(ctx, st)
     local imgui = ctx.imgui
     local C = ctx.C
     local ui = ctx.ui
-    local st = highwind.get_state()
+    st = st or highwind.get_state()
     if not st then
         imgui.TextDisabled('Highwind state not loaded.')
         return
@@ -124,7 +201,7 @@ local function draw_highwind_status(ctx)
     imgui.TextDisabled('| Reset in ' .. fmt_reset_remaining(highwind.next_reset_timestamp()))
     imgui.Separator()
 
-    local is_alive = not highwind.is_killed_this_week()
+    local is_alive = not highwind.is_killed_this_week(st)
     local icon_fn = ui and ui._draw_highwind_icon
     local icon_drawn = false
     if type(icon_fn) == 'function' then
@@ -208,11 +285,11 @@ local function attach_tooltip(imgui, text)
     end
 end
 
-local function draw_quests_status_table(ctx)
+local function draw_quests_status_table(ctx, st)
     local imgui = ctx.imgui
     local C = ctx.C
     local TF_BORDER = ctx.TF_BORDER
-    local st = quests.get_state()
+    st = st or quests.get_state()
     if not st then
         imgui.TextDisabled('Quests state not loaded.')
         return
@@ -222,7 +299,7 @@ local function draw_quests_status_table(ctx)
     imgui.SameLine()
     imgui.TextDisabled('| Reset in ' .. fmt_reset_remaining(quests.next_reset_timestamp()))
     imgui.Separator()
-    imgui.TextUnformatted(quests.get_summary())
+    imgui.TextUnformatted(quests.get_summary(st))
     imgui.Separator()
 
     if imgui.BeginTable('tbl_quests_status', 5, TF_BORDER) then
@@ -234,7 +311,7 @@ local function draw_quests_status_table(ctx)
         imgui.TableHeadersRow()
 
         for _, qdef in ipairs(quests.catalog()) do
-            local q = quests.get_quest_state(qdef.id) or { state = 'available' }
+            local q = quests.get_quest_state(qdef.id, st) or { state = 'available' }
             local label = quests.quest_state_label(qdef, q.state, q)
             local color = color_for_quest_state(C, q.state)
 
@@ -246,9 +323,9 @@ local function draw_quests_status_table(ctx)
             imgui.TableSetColumnIndex(2)
             imgui.TextDisabled(qdef.npc or '')
             imgui.TableSetColumnIndex(3)
-            imgui.TextDisabled(quests.get_quest_zone_hint(qdef.id) or '')
+            imgui.TextDisabled(quests.get_quest_zone_hint(qdef.id, st) or '')
             imgui.TableSetColumnIndex(4)
-            local next_step = quests.get_quest_next_step(qdef.id) or ''
+            local next_step = quests.get_quest_next_step(qdef.id, st) or ''
             imgui.TextColored(C.ITEM or C.QTY, '?')
             attach_tooltip(imgui, next_step)
         end
@@ -374,52 +451,68 @@ local function draw_options(ctx)
     end
 end
 
+function ui_weekly.render_options(ctx)
+    draw_options(ctx)
+end
+
 --------------------------------------------------------------------
 function ui_weekly.render(ctx)
     local imgui = ctx.imgui
     local ui = ctx.ui
+    local eco_state, highwind_state, quests_state, is_current = viewed_states(ctx)
 
     local tab_bar_id = ui.compact and '##weekly_compact' or '##weekly_full'
+    if not ui.compact and not is_current then
+        imgui.TextDisabled('Viewing ' .. tostring(selected_character) .. ' - read-only')
+    end
     if not imgui.BeginTabBar(tab_bar_id) then return end
 
     if ui.compact then
         if imgui.BeginTabItem('Weekly') then
-            local ec = ecowar.get_state()
+            local ec = eco_state
             if ec then
-                imgui.TextUnformatted(ecowar.get_summary())
+                imgui.TextUnformatted(ecowar.get_summary(ec))
                 imgui.TextDisabled('Eco reset in ' .. fmt_reset_remaining(ecowar.next_reset_timestamp()))
             end
             imgui.Separator()
-            local hw = highwind.get_state()
+            local hw = highwind_state
             if hw then
-                imgui.TextUnformatted(highwind.get_summary())
+                imgui.TextUnformatted(highwind.get_summary(hw))
                 imgui.TextDisabled('HW reset in ' .. fmt_reset_remaining(highwind.next_reset_timestamp()))
             end
             imgui.Separator()
-            local qst = quests.get_state()
+            local qst = quests_state
             if qst then
-                imgui.TextUnformatted(quests.get_summary())
+                imgui.TextUnformatted(quests.get_summary(qst))
             end
+            if not is_current then imgui.TextDisabled('Viewing ' .. tostring(selected_character) .. ' (read-only)') end
             imgui.EndTabItem()
         end
     else
         if imgui.BeginTabItem('Eco-War') then
-            draw_ecowar_status_table(ctx)
-            draw_ecowar_messages(ctx)
+            draw_ecowar_status_table(ctx, eco_state)
+            if is_current then draw_ecowar_messages(ctx) end
             imgui.EndTabItem()
         end
         if imgui.BeginTabItem('Highwind') then
-            draw_highwind_status(ctx)
-            draw_highwind_messages(ctx)
+            draw_highwind_status(ctx, highwind_state)
+            if is_current then draw_highwind_messages(ctx) end
             imgui.EndTabItem()
         end
         if imgui.BeginTabItem('Quests') then
-            draw_quests_status_table(ctx)
-            draw_quests_messages(ctx)
+            draw_quests_status_table(ctx, quests_state)
+            if is_current then draw_quests_messages(ctx) end
             imgui.EndTabItem()
         end
-        if imgui.BeginTabItem('Options') then
-            draw_options(ctx)
+        local select_options = ui._open_settings_requested == true
+        if imgui.BeginTabItem('Options', nil, select_options and 2 or 0) then
+            if select_options then ui._open_settings_requested = false end
+            if is_current then
+                draw_options(ctx)
+            else
+                imgui.TextDisabled('Read-only while viewing ' .. tostring(selected_character) .. '.')
+                imgui.TextDisabled('Choose Current in the Character tab to use manual controls.')
+            end
             imgui.EndTabItem()
         end
     end

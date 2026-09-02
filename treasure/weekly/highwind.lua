@@ -152,17 +152,30 @@ end
 
 function highwind.get_state() return state end
 
-function highwind.is_killed_this_week()
-    if not state then return false end
-    return state.killedThisWeek == true
+function highwind.is_killed_this_week(candidate)
+    local current = type(candidate) == 'table' and candidate or state
+    if not current then return false end
+    return current.killedThisWeek == true
 end
 
-function highwind.get_summary()
-    if not state then return '' end
-    if state.killedThisWeek then
+function highwind.get_summary(candidate)
+    local current = type(candidate) == 'table' and candidate or state
+    if not current then return '' end
+    if current.killedThisWeek then
         return 'Highwind: killed this week'
     end
     return 'Highwind: available'
+end
+
+function highwind.prepare_view(loaded, character)
+    local view = normalize_loaded(loaded)
+    view.character = character or view.character or 'Unknown'
+    local wid = jst_week_id()
+    if view.lastKnownWeekId ~= nil and view.lastKnownWeekId ~= wid then
+        view.killedThisWeek = false
+    end
+    view.lastKnownWeekId = wid
+    return view
 end
 
 function highwind.get_next_step()

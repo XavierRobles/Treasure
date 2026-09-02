@@ -1006,7 +1006,9 @@ function ui_limbus.render(ctx)
                 imgui.EndTabItem()
             end
 
-            if imgui.BeginTabItem('Settings') then
+            local select_settings = ui._open_settings_requested == true
+            if imgui.BeginTabItem('Settings', nil, select_settings and 2 or 0) then
+                if select_settings then ui._open_settings_requested = false end
                 draw_settings_panel(cfg, C, ctx.event_id or 'limbus')
                 imgui.EndTabItem()
             end

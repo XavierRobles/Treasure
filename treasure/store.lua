@@ -318,6 +318,7 @@ function store.save(sess, opts)
     local sess_event_id = type(sess.event_id) == 'string' and sess.event_id ~= '' and sess.event_id or nil
     local ev_id = normalize_event_id(sess_event_id or event_id_opt)
     local filename
+    local filename_was_new = not (sess._filename and sess._filename ~= '')
     if sess._filename and sess._filename ~= '' then
         filename = sess._filename
     elseif ev_id == 'dynamis' then
@@ -362,7 +363,11 @@ function store.save(sess, opts)
     end
 
     save_gate[sess] = now
-    invalidate_list_cache()
+    -- Updating an existing session does not change the directory contents.
+    -- Keep the history list cache unless this save introduced a new file.
+    if filename_was_new then
+        invalidate_list_cache()
+    end
 
     return true
 end

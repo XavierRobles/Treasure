@@ -380,9 +380,9 @@ function quests.quest_state_label(qdef, s, q)
     return quests.state_label(s)
 end
 
-function quests.get_quest_zone_hint(quest_id)
+function quests.get_quest_zone_hint(quest_id, candidate)
     local qdef = CATALOG_BY_ID[quest_id]
-    local q = quests.get_quest_state(quest_id)
+    local q = quests.get_quest_state(quest_id, candidate)
     if not qdef or not q then return '' end
     if q.state == 'cooldown' or q.state == 'cooldown_no_ki' then return qdef.zone_cooldown or qdef.zone_hint or '' end
     if q.state == 'has_key_item_available' then return qdef.zone_has_key_item_available or qdef.zone_cooldown or qdef.zone_hint or '' end
@@ -391,9 +391,9 @@ function quests.get_quest_zone_hint(quest_id)
     return qdef.zone_hint or ''
 end
 
-function quests.get_quest_next_step(quest_id)
+function quests.get_quest_next_step(quest_id, candidate)
     local qdef = CATALOG_BY_ID[quest_id]
-    local q = quests.get_quest_state(quest_id)
+    local q = quests.get_quest_state(quest_id, candidate)
     if not qdef or not q then return '' end
     if q.state == 'cooldown' then
         if q.available_at then
@@ -431,16 +431,18 @@ function quests.get_quest_next_step(quest_id)
     return qdef.next_available or 'Talk to the NPC to start.'
 end
 
-function quests.get_quest_state(quest_id)
-    if not state then return nil end
-    return state.quests[quest_id]
+function quests.get_quest_state(quest_id, candidate)
+    local current = type(candidate) == 'table' and candidate or state
+    if not current or type(current.quests) ~= 'table' then return nil end
+    return current.quests[quest_id]
 end
 
-function quests.get_summary()
-    if not state then return '' end
+function quests.get_summary(candidate)
+    local current = type(candidate) == 'table' and candidate or state
+    if not current or type(current.quests) ~= 'table' then return '' end
     local done, active, total = 0, 0, #CATALOG
     for _, qdef in ipairs(CATALOG) do
-        local q = state.quests[qdef.id]
+        local q = current.quests[qdef.id]
         if q then
             if q.completed_this_week then
                 done = done + 1
@@ -450,6 +452,40 @@ function quests.get_summary()
         end
     end
     return ('Quests/ENM: %d/%d done | %d active'):format(done, total, active)
+end
+
+function quests.prepare_view(loaded, character)
+    local view = normalize_loaded(loaded)
+    view.character = character or view.character or 'Unknown'
+    local wid = jst_week_id()
+    if view.lastKnownWeekId ~= nil and view.lastKnownWeekId ~= wid then
+        for _, qdef in ipairs(CATALOG) do
+            local q = view.quests[qdef.id]
+            if qdef.flow ~= 'ki_cooldown'
+                    and (q.completed_this_week or q.state == 'completed_this_week') then
+                q.completed_this_week = false
+                q.state = 'available'
+                q.last_completed = nil
+                q.obtained_at = nil
+                q.available_at = nil
+            end
+        end
+    end
+    view.lastKnownWeekId = wid
+    local now = os.time()
+    for _, qdef in ipairs(CATALOG) do
+        local q = view.quests[qdef.id]
+        if qdef.flow == 'ki_cooldown' and q and q.available_at and now >= q.available_at then
+            if q.state == 'cooldown' then
+                q.state = 'has_key_item_available'
+            elseif q.state == 'cooldown_no_ki' then
+                q.state = 'available'
+                q.obtained_at = nil
+                q.available_at = nil
+            end
+        end
+    end
+    return view
 end
 
 local function normalize_text(s)

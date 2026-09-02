@@ -108,6 +108,9 @@ local timeutil = require('timeutil')
 local persistence = require('persist')
 local event_router = require('ui_event_router')
 local ui_weekly = require('ui_weekly')
+local ui_combat = require('ui_combat')
+local combat = require('combat.init')
+local sound_volume = require('sound_volume')
 -------------------------------------------------------------------------------
 
 --------------------------------------------------------------------
@@ -2192,7 +2195,7 @@ local function draw_treasure_table (sess, C, cfg, event_id)
     end
 end
 
-local function draw_settings_panel(cfg, C, event_id)
+local function draw_settings_panel(cfg, C, event_id, section)
     local changed = false
     local active_event = tostring(event_id or ''):lower()
     if (active_event ~= 'dynamis') and (active_event ~= 'limbus') then
@@ -2212,8 +2215,12 @@ local function draw_settings_panel(cfg, C, event_id)
         return dynC, DEFAULT_COLORS_DYNAMIS, 'Dynamis'
     end
 
-    if imgui.BeginTabBar('##settings_sections_' .. active_event) then
-        if imgui.BeginTabItem('Globals') then
+    local show_section_tabs = (section == nil)
+    local sections_open = (not show_section_tabs) or imgui.BeginTabBar('##settings_sections_' .. active_event)
+    if sections_open then
+        local globals_open = (section == 'globals')
+                or (show_section_tabs and imgui.BeginTabItem('Globals'))
+        if globals_open then
             local _, _, event_label = current_event_palette()
             local list = THEMES_OK and keys(ADDON_THEMES) or { cfg.theme }
             local sel = 1
@@ -2241,6 +2248,27 @@ local function draw_settings_panel(cfg, C, event_id)
             if imgui.SliderFloat('Font Scale', fs, 0.5, 2.0, '%.2f') then
                 cfg.font_scale = fs[1]
                 changed = true
+            end
+
+            imgui.Separator()
+            imgui.TextUnformatted('Notifications')
+            local blue_learn_alert = { cfg.blue_magic_learn_alert ~= false }
+            if imgui.Checkbox('Notify when Blue Magic is learned', blue_learn_alert) then
+                cfg.blue_magic_learn_alert = blue_learn_alert[1]
+                changed = true
+            end
+            draw_hover_tooltip(
+                    'Shows the learned spell in chat and plays sound/Learned.wav.')
+            local blue_learn_volume = {
+                math.max(0, math.min(100, tonumber(cfg.blue_magic_learn_volume) or 100))
+            }
+            if imgui.SliderInt('Alert volume', blue_learn_volume, 0, 100, '%d%%') then
+                cfg.blue_magic_learn_volume = blue_learn_volume[1]
+                changed = true
+            end
+            draw_hover_tooltip('At 0%, the chat message remains enabled but no sound is played.')
+            if imgui.SmallButton('Test sound##blue_magic_learned') then
+                sound_volume.play(addon.path .. '\\sound\\Learned.wav', blue_learn_volume[1])
             end
 
             cfg.menu_hide = cfg.menu_hide or {}
@@ -2607,10 +2635,12 @@ local function draw_settings_panel(cfg, C, event_id)
                 changed = true
             end
 
-            imgui.EndTabItem()
+            if show_section_tabs then imgui.EndTabItem() end
         end
 
-        if imgui.BeginTabItem('Loots') then
+        local loots_open = (section == 'loots')
+                or (show_section_tabs and imgui.BeginTabItem('Loots'))
+        if loots_open then
             local editC, defaultsC, event_label = current_event_palette()
             imgui.TextUnformatted(event_label .. ' Loot Colors')
 
@@ -2642,10 +2672,12 @@ local function draw_settings_panel(cfg, C, event_id)
                 dynC = editC
             end
 
-            imgui.EndTabItem()
+            if show_section_tabs then imgui.EndTabItem() end
         end
 
-        if active_event == 'limbus' and imgui.BeginTabItem('Chips') then
+        local chips_open = active_event == 'limbus' and ((section == 'chips')
+                or (show_section_tabs and imgui.BeginTabItem('Chips')))
+        if chips_open then
             imgui.TextUnformatted('Limbus Chip Colors')
             local CC = cfg.chip_colors or {}
             local function cpicker(key)
@@ -2664,10 +2696,10 @@ local function draw_settings_panel(cfg, C, event_id)
                 changed = true
             end
             cfg.chip_colors = CC
-            imgui.EndTabItem()
+            if show_section_tabs then imgui.EndTabItem() end
         end
 
-        imgui.EndTabBar()
+        if show_section_tabs then imgui.EndTabBar() end
     end
 
     cfg.colors_dynamis = dynC
@@ -2743,6 +2775,42 @@ local function build_event_context(sess, cfg)
         draw_treasure_table = draw_treasure_table,
         draw_settings_panel = draw_settings_panel,
     }
+end
+
+local function draw_all_settings(ctx)
+    local cfg = ctx.cfg
+    if not imgui.BeginTabBar('##all_treasure_settings') then return end
+
+    if imgui.BeginTabItem('General') then
+        draw_settings_panel(cfg, event_loot_colors(cfg, 'dynamis'), 'dynamis', 'globals')
+        imgui.EndTabItem()
+    end
+    if imgui.BeginTabItem('Dynamis') then
+        draw_settings_panel(cfg, event_loot_colors(cfg, 'dynamis'), 'dynamis')
+        imgui.EndTabItem()
+    end
+    if imgui.BeginTabItem('Limbus') then
+        draw_settings_panel(cfg, event_loot_colors(cfg, 'limbus'), 'limbus')
+        imgui.EndTabItem()
+    end
+    if imgui.BeginTabItem('Weekly') then
+        ui_weekly.render_options(ctx)
+        imgui.EndTabItem()
+    end
+    if imgui.BeginTabItem('Combat Log') then
+        ui_combat.render_embedded(cfg, function()
+            combat.configure(cfg.combat_log)
+            persist(cfg)
+        end)
+        imgui.EndTabItem()
+    end
+
+    imgui.EndTabBar()
+end
+
+ui._draw_all_settings = draw_all_settings
+ui._draw_weekly_character_selector = function(ctx)
+    ui_weekly.render_character_selector(ctx)
 end
 
 --------------------------------------------------------------------
@@ -3146,6 +3214,17 @@ function ui.render(sess, cfg)
                 local x_close = math.max(8, child_w - bw_close - 12)
                 local x_back = math.max(8, x_close - header_gap - bw_back)
 
+                if event_id == 'weekly' and type(ui._draw_weekly_character_selector) == 'function' then
+                    local title_w, _ = imgui.CalcTextSize(title)
+                    if type(title_w) ~= 'number' then title_w = _get_xy(title_w) end
+                    local selector_x = 8 + (tonumber(title_w) or 0) + 14
+                    if selector_x + 180 < x_back - 8 then
+                        imgui.SetCursorPosX(selector_x)
+                        imgui.SetCursorPosY(3)
+                        ui._draw_weekly_character_selector({ imgui = imgui, ui = ui, cfg = cfg })
+                    end
+                end
+
                 local function draw_header_button(id, label, is_close_btn, width_px)
                     local is_selected = not is_close_btn
                     local base = is_selected and bs.selected_bg or bs.idle_bg
@@ -3302,10 +3381,22 @@ function ui.render(sess, cfg)
                 end
 
                 if clicked then
-                    ui.selected_event = id
-                    ui.selected_event_user = true
-                    if id ~= 'weekly' then
-                        event_router.set_active(ui, id)
+                    if id == 'settings' then
+                        local settings_event = (zone_event ~= '' and zone_event)
+                                or tostring(ui.selected_event or ui.active_event or 'dynamis'):lower()
+                        if settings_event ~= 'dynamis' and settings_event ~= 'limbus' and settings_event ~= 'weekly' then
+                            settings_event = 'dynamis'
+                        end
+                        ui._settings_return_event = settings_event
+                        ui.selected_event = 'settings'
+                        ui.selected_event_user = true
+                        ui._open_settings_requested = false
+                    else
+                        ui.selected_event = id
+                        ui.selected_event_user = true
+                        if id ~= 'weekly' then
+                            event_router.set_active(ui, id)
+                        end
                     end
 
                     -- Compact => Full using selected event.
@@ -3596,15 +3687,26 @@ function ui.render(sess, cfg)
             end
             local avail_w = tonumber(avail_x) or 0
             local gap = spacing
-            local chip_w = math.floor((avail_w - (gap * 2)) / 3)
-            if chip_w < 80 then
-                chip_w = 80
+            local gear_w = 36
+            local chip_w = math.floor((avail_w - gear_w - (gap * 3)) / 3)
+            if chip_w < 64 then
+                chip_w = 64
             end
             draw_event_chip('dynamis', 'Dynamis', chip_w)
             imgui.SameLine(0, gap)
             draw_event_chip('limbus', 'Limbus', chip_w)
             imgui.SameLine(0, gap)
             draw_event_chip('weekly', 'Weekly', chip_w)
+            imgui.SameLine(0, gap)
+            draw_event_chip('settings', '⚙', gear_w)
+            if imgui.IsItemHovered ~= nil then
+                local ok_hover, hovered = pcall(imgui.IsItemHovered)
+                if ok_hover and (hovered == true or tonumber(hovered) == 1) then
+                    if imgui.SetTooltip ~= nil then
+                        pcall(imgui.SetTooltip, 'Options')
+                    end
+                end
+            end
         end
     end
 
@@ -3705,7 +3807,7 @@ function ui.render(sess, cfg)
         full_body_child = true
     end
 
-    if not ui.compact then
+    if not ui.compact and tostring(ui.selected_event or ''):lower() ~= 'settings' then
         local event_id = tostring(ui.selected_event or (sess and sess.event_id) or ui.active_event or 'dynamis')
         local status_top = event_router.top_left_status(ui, {
             sess = sess,
@@ -3722,7 +3824,7 @@ function ui.render(sess, cfg)
     -- Selector de sesiones históricas
     ----------------------------------------------------------------
     do
-        if not ui.compact then
+        if not ui.compact and tostring(ui.selected_event or ''):lower() ~= 'settings' then
             local history_event = ui.selected_event or (sess and sess.event_id) or ui.active_event
             if ui._history_event ~= history_event then
                 ui._history_event = history_event
@@ -3850,7 +3952,9 @@ function ui.render(sess, cfg)
     local event_ctx = build_event_context(sess, cfg)
 
     local tab_style_colors, tab_style_vars = push_tabs_style(event_ctx.event_id, cfg, C)
-    if event_ctx.event_id == 'weekly' then
+    if event_ctx.event_id == 'settings' then
+        ui._draw_all_settings(event_ctx)
+    elseif event_ctx.event_id == 'weekly' then
         ui_weekly.render(event_ctx)
     else
         event_router.render(ui, event_ctx)

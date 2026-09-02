@@ -457,6 +457,66 @@ function parser.handle_line(txt, s, context)
     end
 end
 
+-- Full combat mode suppresses the game's rendered 0x028 text. Keep Dynamis
+-- Steal accounting on the original structured action instead of visible chat.
+function parser.handle_dynamis_steal_event(event, s)
+    if not (s and tostring(s.event_id or ''):lower() == 'dynamis' and type(event) == 'table') then
+        return false
+    end
+
+    local player = GetPlayerEntity()
+    local player_id = tonumber(player and player.ServerId) or 0
+    local actor_id = tonumber(event.actor and event.actor.server_id) or 0
+    if player_id == 0 or actor_id ~= player_id then
+        return false
+    end
+
+    local result = nil
+    for _, target in ipairs(event.targets or {}) do
+        local message_id = tonumber(target.message_id) or 0
+        if message_id == 125 or message_id == 153 then
+            result = target
+            break
+        end
+    end
+    if not result then
+        return false
+    end
+
+    local is_success = tonumber(result.message_id) == 125
+    local item_name = ''
+    if is_success then
+        local item_id = tonumber(result.amount) or 0
+        local item = item_id > 0 and AshitaCore:GetResourceManager():GetItemById(item_id) or nil
+        local names = item and item.Name
+        item_name = clean(strip(names and (names[1] or names[2]) or ''))
+    end
+
+    local actor_name = clean(strip(player.Name or s.player_name or ''))
+    local duplicate_use = should_skip_steal_event('use', actor_name)
+    local duplicate_result = should_skip_steal_event(is_success and 'ok' or 'fail', actor_name, item_name)
+    if duplicate_use or duplicate_result then
+        return false
+    end
+
+    local sp = ensure_steal_personal_state(s)
+    sp.attempts = sp.attempts + 1
+    sp.pending = 0
+
+    if is_success then
+        sp.success = sp.success + 1
+        local label = steal_currency_label(item_name)
+        if label then
+            sp.by_currency[label] = (sp.by_currency[label] or 0) + 1
+        end
+    else
+        sp.failed = sp.failed + 1
+    end
+
+    store.save(s)
+    return true
+end
+
 ------------------------ treasure pool
 local mm = AshitaCore:GetMemoryManager()
 local rm = AshitaCore:GetResourceManager()

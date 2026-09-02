@@ -6,6 +6,7 @@ local parser = require('parser')
 local core = require('core')
 local store = require('store')
 local chatutil = require('chatutil')
+local timeutil = require('timeutil')
 
 local limbus = {
     id = 'limbus',
@@ -14,6 +15,7 @@ local limbus = {
 
 local TRANSITION_CONFIRM_SECONDS = 6
 local GUNPOD_SCAN_INTERVAL = 0.30
+local GUNPOD_FULL_SCAN_INTERVAL = 1.50
 local GUNPOD_MAX_SPAWNS = 5
 local GUNPOD_CROSS_SOURCE_DEDUPE_SECONDS = 12.0
 local GUNPOD_MESSAGE_DEDUPE_SECONDS = 8
@@ -525,6 +527,7 @@ local function ensure_gunpod_state(sess)
     gp.active_count = math.max(0, tonumber(gp.active_count) or 0)
     gp.active_hp = tonumber(gp.active_hp) or nil
     gp.last_scan = tonumber(gp.last_scan) or 0
+    gp.last_full_scan = tonumber(gp.last_full_scan) or 0
     gp.spawn_messages = math.max(0, tonumber(gp.spawn_messages) or 0)
     if gp.total_spawns > gp.max_spawns then
         gp.max_spawns = gp.total_spawns
@@ -542,6 +545,9 @@ local function ensure_gunpod_state(sess)
     if type(gp.active_keys) ~= 'table' then
         gp.active_keys = {}
     end
+    if type(gp.known_indices) ~= 'table' then
+        gp.known_indices = {}
+    end
     if type(gp.last_hp_by_key) ~= 'table' then
         gp.last_hp_by_key = {}
     end
@@ -558,6 +564,7 @@ local function reset_gunpod_state(sess)
         active_count = 0,
         active_hp = nil,
         last_scan = 0,
+        last_full_scan = 0,
         spawn_messages = 0,
         last_spawn_msg_at = 0,
         last_spawn_msg_sig = '',
@@ -565,6 +572,7 @@ local function reset_gunpod_state(sess)
         last_spawn_event_source = '',
         seen_ids = {},
         active_keys = {},
+        known_indices = {},
         last_hp_by_key = {},
     }
 end
@@ -582,7 +590,7 @@ local function add_gunpod_spawns(gp, source, delta, now_tick)
     local before = math.max(0, tonumber(gp.total_spawns) or 0)
     local max_spawns = math.max(1, tonumber(gp.max_spawns) or GUNPOD_MAX_SPAWNS)
     local src = tostring(source or '')
-    local nowv = tonumber(now_tick) or os.clock()
+    local nowv = tonumber(now_tick) or timeutil.now()
 
     local last_tick = tonumber(gp.last_spawn_event_tick) or 0
     local last_src = tostring(gp.last_spawn_event_source or '')
@@ -770,7 +778,7 @@ local function handle_gunpod_line(line, sess)
         if gp.spawn_messages > (tonumber(gp.max_spawns) or GUNPOD_MAX_SPAWNS) then
             gp.max_spawns = gp.spawn_messages
         end
-        local changed_total = add_gunpod_spawns(gp, 'msg', 1, os.clock())
+        local changed_total = add_gunpod_spawns(gp, 'msg', 1, timeutil.now())
         gp.last_spawn_msg_at = now
         gp.last_spawn_msg_sig = tostring(sig or '')
         if changed_total then
@@ -780,6 +788,47 @@ local function handle_gunpod_line(line, sess)
     end
 
     return false
+end
+
+function limbus.on_combat_event(event, sess)
+    if not (sess and sess.limbus_run_started == true and sess.limbus_run_ended ~= true
+            and is_apollyon_central(sess) and type(event) == 'table') then
+        return false
+    end
+
+    local action = event.action or {}
+    local action_name = normalize_plain(action.name or '')
+    local action_id = tonumber(action.id) or 0
+    if action_name ~= 'pod ejection' and action_id ~= 1532 then
+        return false
+    end
+    if event.kind ~= 'ability_ready' and tostring(action.category or '') ~= 'monster_ability_ready' then
+        return false
+    end
+
+    local gp = ensure_gunpod_state(sess)
+    if not gp then
+        return false
+    end
+
+    local now = os.time()
+    local last_at = tonumber(gp.last_spawn_msg_at) or 0
+    local last_sig = tostring(gp.last_spawn_msg_sig or '')
+    if last_sig == 'pod_ejection' and last_at > 0 and (now - last_at) <= GUNPOD_MESSAGE_DEDUPE_SECONDS then
+        return true
+    end
+
+    gp.spawn_messages = math.max(0, tonumber(gp.spawn_messages) or 0) + 1
+    if gp.spawn_messages > (tonumber(gp.max_spawns) or GUNPOD_MAX_SPAWNS) then
+        gp.max_spawns = gp.spawn_messages
+    end
+    local changed = add_gunpod_spawns(gp, 'packet', 1, timeutil.now())
+    gp.last_spawn_msg_at = now
+    gp.last_spawn_msg_sig = 'pod_ejection'
+    if changed then
+        store.save(sess)
+    end
+    return true
 end
 
 local function snapshot_party_in_zone(zid)
@@ -1429,7 +1478,7 @@ local function scan_central_gunpod(sess, now_tick)
         return false
     end
 
-    now_tick = tonumber(now_tick) or os.clock()
+    now_tick = tonumber(now_tick) or timeutil.now()
     local last = tonumber(gp.last_scan) or 0
     if (now_tick - last) < GUNPOD_SCAN_INTERVAL then
         return false
@@ -1448,12 +1497,14 @@ local function scan_central_gunpod(sess, now_tick)
     local prev_hp_by_key = gp.last_hp_by_key or {}
     local now_active_keys = {}
     local now_hp_by_key = {}
+    local known_indices = {}
     local spawn_delta = 0
     local changed = false
 
-    for i = 0, ENTITY_MAX_INDEX do
+    local function inspect_index(i)
         local name = clean_name(ent_mgr:GetName(i))
         if name ~= '' and name:lower() == 'gunpod' then
+            known_indices[i] = true
             local sid = nil
             if ent_mgr.GetServerId then
                 sid = tonumber(ent_mgr:GetServerId(i))
@@ -1502,6 +1553,23 @@ local function scan_central_gunpod(sess, now_tick)
             end
         end
     end
+
+    local last_full_scan = tonumber(gp.last_full_scan) or 0
+    local do_full_scan = last_full_scan <= 0 or (now_tick - last_full_scan) >= GUNPOD_FULL_SCAN_INTERVAL
+    if do_full_scan then
+        for i = 0, ENTITY_MAX_INDEX do
+            inspect_index(i)
+        end
+        gp.last_full_scan = now_tick
+    else
+        for index in pairs(gp.known_indices or {}) do
+            local i = tonumber(index)
+            if i and i >= 0 and i <= ENTITY_MAX_INDEX then
+                inspect_index(i)
+            end
+        end
+    end
+    gp.known_indices = known_indices
 
     if spawn_delta > 0 then
         -- Message is authoritative when present; entity fallback only if

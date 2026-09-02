@@ -584,7 +584,6 @@ local tab_bar_id = ui.compact and '##edtabs_compact' or '##edtabs_dynamis_full'
             if imgui.BeginTabItem('Management') then
                 if not (sess and sess.is_event) then
                     imgui.TextDisabled('No active event')
-                    imgui.EndTabItem()
                 else
                     sess.split = sess.split or {}
                     sess.management = sess.management or {}
@@ -1133,7 +1132,9 @@ local tab_bar_id = ui.compact and '##edtabs_compact' or '##edtabs_dynamis_full'
             end
 
             ---------------------------------------------------------------- SETTINGS
-            if imgui.BeginTabItem('Settings') then
+            local select_settings = ui._open_settings_requested == true
+            if imgui.BeginTabItem('Settings', nil, select_settings and 2 or 0) then
+                if select_settings then ui._open_settings_requested = false end
                 draw_settings_panel(cfg, C, ctx.event_id or 'dynamis')
                 imgui.EndTabItem()
             end

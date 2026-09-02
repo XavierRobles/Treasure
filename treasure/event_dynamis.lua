@@ -86,4 +86,8 @@ function dynamis.on_text(line, sess, context)
     parser.handle_line(line, sess, context)
 end
 
+function dynamis.on_combat_event(event, sess)
+    return parser.handle_dynamis_steal_event(event, sess)
+end
+
 return dynamis

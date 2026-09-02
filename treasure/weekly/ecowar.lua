@@ -212,9 +212,14 @@ function ecowar.field_npc(eco) return FIELD_NPCS[eco] end
 function ecowar.city_npc(eco) return CITY_NPCS[eco] end
 function ecowar.all_ecos() return ALL_ECOS end
 
-function ecowar.current_target_npc(eco)
-    if not state or state.activeEco ~= eco then return CITY_NPCS[eco] end
-    local phase = state.phase
+local function selected_state(candidate)
+    return type(candidate) == 'table' and candidate or state
+end
+
+function ecowar.current_target_npc(eco, candidate)
+    local current = selected_state(candidate)
+    if not current or current.activeEco ~= eco then return CITY_NPCS[eco] end
+    local phase = current.phase
     if phase == 'accepted'
             or phase == 'field_agent_started'
             or phase == 'nm_ready'
@@ -224,91 +229,110 @@ function ecowar.current_target_npc(eco)
     return CITY_NPCS[eco]
 end
 
-function ecowar.is_cycle_complete()
-    if not state then return false end
-    return state.cycleCompleted.sandy == true
-            and state.cycleCompleted.windy == true
-            and state.cycleCompleted.bastok == true
+function ecowar.is_cycle_complete(candidate)
+    local current = selected_state(candidate)
+    if not current then return false end
+    return current.cycleCompleted.sandy == true
+            and current.cycleCompleted.windy == true
+            and current.cycleCompleted.bastok == true
 end
 
-function ecowar.get_available_by_cycle()
-    if not state then return {} end
-    if ecowar.is_cycle_complete() then return { 'sandy', 'windy', 'bastok' } end
+function ecowar.get_available_by_cycle(candidate)
+    local current = selected_state(candidate)
+    if not current then return {} end
+    if ecowar.is_cycle_complete(current) then return { 'sandy', 'windy', 'bastok' } end
     local out = {}
     for _, e in ipairs(ALL_ECOS) do
-        if state.cycleCompleted[e] ~= true then out[#out + 1] = e end
+        if current.cycleCompleted[e] ~= true then out[#out + 1] = e end
     end
     return out
 end
 
-function ecowar.get_completed_list()
-    if not state then return {} end
+function ecowar.get_completed_list(candidate)
+    local current = selected_state(candidate)
+    if not current then return {} end
     local out = {}
     for _, e in ipairs(ALL_ECOS) do
-        if state.cycleCompleted[e] == true then out[#out + 1] = e end
+        if current.cycleCompleted[e] == true then out[#out + 1] = e end
     end
     return out
 end
 
 function ecowar.get_state() return state end
 
-function ecowar.get_phase_label()
-    if not state then return 'None' end
-    return PHASE_LABELS[state.phase] or tostring(state.phase or 'none')
+function ecowar.get_phase_label(candidate)
+    local current = selected_state(candidate)
+    if not current then return 'None' end
+    return PHASE_LABELS[current.phase] or tostring(current.phase or 'none')
 end
 
-function ecowar.get_summary()
-    if not state then return '' end
-    if state.activeEco ~= 'none' then
-        return ('Eco: %s | %s'):format(eco_label(state.activeEco), ecowar.get_phase_label())
+function ecowar.get_summary(candidate)
+    local current = selected_state(candidate)
+    if not current then return '' end
+    if current.activeEco ~= 'none' then
+        return ('Eco: %s | %s'):format(eco_label(current.activeEco), ecowar.get_phase_label(current))
     end
-    if state.currentWeekCompleted ~= 'none' then
-        return ('Eco: %s done'):format(eco_label(state.currentWeekCompleted))
+    if current.currentWeekCompleted ~= 'none' then
+        return ('Eco: %s done'):format(eco_label(current.currentWeekCompleted))
     end
-    local avail = ecowar.get_available_by_cycle()
+    local avail = ecowar.get_available_by_cycle(current)
     if #avail == 0 then return 'Eco: cycle done' end
     return ('Eco: %s open'):format(eco_list_string(avail))
 end
 
-function ecowar.get_accept_now_string()
-    if not state then return 'none' end
-    if state.activeEco ~= 'none' then return 'none, active quest in progress' end
-    if state.currentWeekCompleted ~= 'none' then return 'none until next reset' end
-    return eco_list_string(ecowar.get_available_by_cycle())
+function ecowar.get_accept_now_string(candidate)
+    local current = selected_state(candidate)
+    if not current then return 'none' end
+    if current.activeEco ~= 'none' then return 'none, active quest in progress' end
+    if current.currentWeekCompleted ~= 'none' then return 'none until next reset' end
+    return eco_list_string(ecowar.get_available_by_cycle(current))
 end
 
-function ecowar.get_next_step()
-    if not state then return '' end
-    if state.activeEco == 'none' then
-        if state.currentWeekCompleted ~= 'none' then
+function ecowar.get_next_step(candidate)
+    local current = selected_state(candidate)
+    if not current then return '' end
+    if current.activeEco == 'none' then
+        if current.currentWeekCompleted ~= 'none' then
             return 'Wait for weekly reset (Sunday 23:59 JST).'
         end
-        return 'Choose: ' .. eco_list_string(ecowar.get_available_by_cycle()) .. '.'
+        return 'Choose: ' .. eco_list_string(ecowar.get_available_by_cycle(current)) .. '.'
     end
-    if state.phase == 'accepted' then return 'Talk to ' .. FIELD_NPCS[state.activeEco] .. '.' end
-    if state.phase == 'field_agent_started' then return 'Accept ointment/level sync, then kill the NM.' end
-    if state.phase == 'nm_ready' then return 'Kill the NM and touch ??? for the key item.' end
-    if state.phase == 'key_item_obtained' then return 'Return to ' .. FIELD_NPCS[state.activeEco] .. '.' end
-    if state.phase == 'field_agent_confirmed' then return 'Return to ' .. CITY_NPCS[state.activeEco] .. ' for reward.' end
-    if state.phase == 'blocked' then return 'Blocked by weekly lock or active quest.' end
+    if current.phase == 'accepted' then return 'Talk to ' .. FIELD_NPCS[current.activeEco] .. '.' end
+    if current.phase == 'field_agent_started' then return 'Accept ointment/level sync, then kill the NM.' end
+    if current.phase == 'nm_ready' then return 'Kill the NM and touch ??? for the key item.' end
+    if current.phase == 'key_item_obtained' then return 'Return to ' .. FIELD_NPCS[current.activeEco] .. '.' end
+    if current.phase == 'field_agent_confirmed' then return 'Return to ' .. CITY_NPCS[current.activeEco] .. ' for reward.' end
+    if current.phase == 'blocked' then return 'Blocked by weekly lock or active quest.' end
     return 'Talk to Eeko-Weeko or continue the quest.'
 end
 
-function ecowar.get_status_for_eco(eco)
-    if not state then return 'OPEN' end
-    if state.activeEco == eco then return 'ACTIVE' end
-    if state.activeEco ~= 'none' then
+function ecowar.get_status_for_eco(eco, candidate)
+    local current = selected_state(candidate)
+    if not current then return 'OPEN' end
+    if current.activeEco == eco then return 'ACTIVE' end
+    if current.activeEco ~= 'none' then
         return 'LOCKED'
     end
-    if state.currentWeekCompleted ~= 'none' then
-        if state.currentWeekCompleted == eco then return 'DONE THIS WEEK' end
-        if ecowar.is_cycle_complete() then return 'AFTER RESET' end
-        if state.cycleCompleted[eco] == true then return 'CYCLE DONE' end
+    if current.currentWeekCompleted ~= 'none' then
+        if current.currentWeekCompleted == eco then return 'DONE THIS WEEK' end
+        if ecowar.is_cycle_complete(current) then return 'AFTER RESET' end
+        if current.cycleCompleted[eco] == true then return 'CYCLE DONE' end
         return 'AFTER RESET'
     end
-    if ecowar.is_cycle_complete() then return 'OPEN' end
-    if state.cycleCompleted[eco] == true then return 'CYCLE DONE' end
+    if ecowar.is_cycle_complete(current) then return 'OPEN' end
+    if current.cycleCompleted[eco] == true then return 'CYCLE DONE' end
     return 'OPEN'
+end
+
+function ecowar.prepare_view(loaded, character)
+    local view = normalize_loaded(loaded)
+    view.character = character or view.character or 'Unknown'
+    local wid = jst_week_id()
+    if view.lastKnownWeekId ~= nil and view.lastKnownWeekId ~= wid then
+        view.currentWeekCompleted = 'none'
+    end
+    view.lastKnownWeekId = wid
+    return view
 end
 
 local function normalize_text(s)
