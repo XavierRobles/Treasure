@@ -34,7 +34,7 @@ function chatutil.strip(s)
     -- Color/control prefixes are two-byte digraphs. Remove both bytes before
     -- sweeping remaining controls so the payload byte cannot break patterns.
     s = s:gsub('[\30\31\127].', '')
-    s = s:gsub('[\0-\31\127]', ' ')
+    s = s:gsub('%c', ' ')
     s = s:gsub('^%[%d%d:%d%d:%d%d%]%s*', '')
     s = s:gsub('^%b()%s*', '')
     s = s:gsub('%s+', ' ')

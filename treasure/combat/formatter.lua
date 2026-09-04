@@ -7,7 +7,7 @@ local DAMAGE = { [1] = true, [2] = true, [67] = true, [110] = true, [163] = true
     [317] = true, [352] = true, [353] = true,
     [576] = true, [577] = true, [33] = true, [44] = true, [161] = true, [536] = true }
 local STATUS = { [75] = true, [85] = true, [114] = true, [123] = true, [127] = true, [159] = true, [230] = true, [236] = true,
-    [186] = true, [231] = true, [237] = true, [242] = true, [266] = true, [267] = true, [268] = true, [269] = true, [270] = true,
+    [186] = true, [231] = true, [237] = true, [242] = true, [243] = true, [266] = true, [267] = true, [268] = true, [269] = true, [270] = true,
     [271] = true, [272] = true, [277] = true, [278] = true, [279] = true, [280] = true,
     [284] = true, [319] = true, [321] = true, [341] = true, [342] = true, [343] = true,
     [329] = true, [330] = true, [331] = true, [332] = true, [333] = true, [334] = true, [335] = true,
@@ -63,7 +63,12 @@ local TAME_SUCCESS = { [138] = true }
 local INTIMIDATED = { [106] = true }
 local CAST_INTERRUPTED = { [78] = true }
 local MANEUVER_OVERLOAD = { [798] = true }
+local MANEUVER_OVERLOADED = { [799] = true }
 local ENMITY_STOLEN = { [526] = true }
+local FORTIFIED_ARCANA = { [134] = true }
+local TP_INCREASED = { [409] = true }
+local MAGIC_EFFECT_DRAINED = { [430] = true }
+local SCAVENGE_SUCCESS = { [674] = true }
 local SKILLCHAINS = {
     [288] = 'Light', [289] = 'Darkness', [290] = 'Gravitation', [291] = 'Fragmentation',
     [292] = 'Distortion', [293] = 'Fusion', [294] = 'Compression', [295] = 'Liquefaction',
@@ -113,6 +118,12 @@ function formatter.supports_target(event, target)
                 and target.status_name ~= nil
                 and entity_name_is_known(target, 'Target')
     end
+    -- Self-use messages do not render a target. Allow the first such action
+    -- after a reload even when the entity cache has not resolved its target.
+    if SELF_USED[message_id] and #(event.targets or {}) == 1
+            and name_is_known and entity_name_is_known(event.actor, 'Actor') then
+        return true
+    end
     -- Resource ids preserve action semantics, but server ids alone are not a
     -- useful entity label. If Ashita cannot currently resolve either side,
     -- retain the native game line instead of exposing Actor/Target 123456.
@@ -122,7 +133,8 @@ function formatter.supports_target(event, target)
     end
     if PARALYZED[message_id] or TOO_FAR_AWAY[message_id] or INTIMIDATED[message_id]
             or CAST_INTERRUPTED[message_id] or TARGET_SWITCHES[message_id] then return true end
-    if category ~= 'melee' and category ~= 'ranged' and not name_is_known then
+    if category ~= 'melee' and category ~= 'ranged'
+            and target.channel ~= 'spike' and not name_is_known then
         return false
     end
     if event.kind == 'cast_start' or event.kind == 'ability_ready' or event.kind == 'item_ready' then
@@ -146,9 +158,12 @@ function formatter.supports_target(event, target)
             or ABILITIES_RECHARGED[message_id] == true
             or DEFEAT[message_id] == true or STEAL_SUCCESS[message_id] == true or STEAL_FAILURE[message_id] == true
             or MUG_SUCCESS[message_id] == true or MUG_FAILURE[message_id] == true
+            or FORTIFIED_ARCANA[message_id] == true or TP_INCREASED[message_id] == true
+            or MAGIC_EFFECT_DRAINED[message_id] == true or SCAVENGE_SUCCESS[message_id] == true
             or STATUS_SPIKES[message_id] == true or CHARM_SUCCESS[message_id] == true
             or CHARM_FAILURE[message_id] == true or TAME_SUCCESS[message_id] == true
-            or MANEUVER_OVERLOAD[message_id] == true or ENMITY_STOLEN[message_id] == true
+            or MANEUVER_OVERLOAD[message_id] == true or MANEUVER_OVERLOADED[message_id] == true
+            or ENMITY_STOLEN[message_id] == true
 end
 
 local function filter_scope(relation)
@@ -186,10 +201,12 @@ local function classify(target)
     if ATTACKS_ENHANCED[message_id] then return 'status' end
     if ATTRIBUTE_ENHANCED[message_id] or PET_POWERS_INCREASE[message_id] then return 'status' end
     if ABILITIES_RECHARGED[message_id] then return 'status' end
+    if FORTIFIED_ARCANA[message_id] or TP_INCREASED[message_id] then return 'status' end
     if CHARM_SUCCESS[message_id] or TAME_SUCCESS[message_id] then return 'status' end
     if DEFEAT[message_id] then return 'defeat' end
     if STEAL_SUCCESS[message_id] or STEAL_FAILURE[message_id] or MUG_SUCCESS[message_id]
             or MUG_FAILURE[message_id] or MANEUVER_OVERLOAD[message_id]
+            or MANEUVER_OVERLOADED[message_id]
             or ENMITY_STOLEN[message_id] then return 'action' end
     if STATUS_SPIKES[message_id] then return 'status' end
     if STATUS_WEAR_OFF[message_id] then return 'status' end
@@ -280,6 +297,11 @@ local function describe_result(target, item_event)
     elseif class == 'misses' or class == 'defenses' then text = tostring(target.outcome or 'miss')
     elseif ROLL[message_id] then text = 'roll ' .. tostring(amount)
     elseif TP_REDUCED[message_id] then text = 'TP reduced to ' .. tostring(amount)
+    elseif TP_INCREASED[message_id] then text = 'TP increased to ' .. tostring(amount)
+    elseif FORTIFIED_ARCANA[message_id] then text = 'fortified against arcana'
+    elseif MAGIC_EFFECT_DRAINED[message_id] then text = '1 magic effect drained'
+    elseif SCAVENGE_SUCCESS[message_id] then
+        text = 'finds ' .. tostring(target.item_name or ('item #' .. tostring(amount)))
     elseif ATTACKS_ENHANCED[message_id] then text = 'attacks enhanced'
     elseif ATTRIBUTE_ENHANCED[message_id] then text = ATTRIBUTE_ENHANCED[message_id]
     elseif PET_POWERS_INCREASE[message_id] then text = "pet's powers increase"
@@ -301,6 +323,8 @@ local function describe_result(target, item_event)
     elseif CHARM_SUCCESS[message_id] then text = 'charmed'
     elseif TAME_SUCCESS[message_id] then text = 'seems friendlier'
     elseif MANEUVER_OVERLOAD[message_id] then text = 'overload chance ' .. tostring(amount) .. '%'
+    elseif MANEUVER_OVERLOADED[message_id] then
+        text = 'overload chance ' .. tostring(amount) .. '% (overloaded)'
     elseif ENMITY_STOLEN[message_id] then text = 'enmity stolen'
     elseif class == 'status' then text = 'gains ' .. tostring(target.status_name or 'an effect')
     elseif USED[message_id] or item_event then text = 'used'
@@ -403,7 +427,8 @@ function formatter.format(event, cfg, action_name)
     end
     if first_target and TARGET_SWITCHES[tonumber(first_target.message_id) or 0] then
         local filters = (cfg and cfg.filters) or {}
-        if filters.abilities ~= false and matrix_allows(cfg,
+        if first_target.replace_original ~= false
+                and filters.abilities ~= false and matrix_allows(cfg,
                 event.actor and event.actor.relation, 'actions') then
             return { string.format('%s: %s -> %s: target switches to %s', actor, action,
                     entity_label(first_target, cfg), actor) }
@@ -534,8 +559,12 @@ function formatter.format(event, cfg, action_name)
     for _, key in ipairs(order) do
         local group = grouped[key]
         local result_text = table.concat(group.results, ' + ')
-        if #group.results > 1 and cfg.aggregation and cfg.aggregation.sum_damage then
-            local class = classify(group.target)
+        local class = classify(group.target)
+        local message_id = tonumber(group.target.message_id) or 0
+        local compact_discrete_results = SHADOWS_ABSORBED[message_id]
+                or (class == 'misses' and all_results_equal(group.results))
+        if #group.results > 1 and ((cfg.aggregation and cfg.aggregation.sum_damage)
+                or compact_discrete_results) then
             if class == 'damage' then
                 local show_detail = not (cfg.display and cfg.display.show_totals == false)
                 if SPIKE_DAMAGE[tonumber(group.target.message_id) or 0] then
@@ -587,7 +616,7 @@ function formatter.format(event, cfg, action_name)
                 if is_magic_burst(group.target) then
                     result_text = 'Magic Burst! ' .. result_text
                 end
-            elseif SHADOWS_ABSORBED[tonumber(group.target.message_id) or 0] then
+            elseif SHADOWS_ABSORBED[message_id] then
                 result_text = string.format('%d %s absorbed', group.total,
                         group.total == 1 and 'shadow' or 'shadows')
             elseif (class == 'misses' or class == 'defenses') and all_results_equal(group.results) then
@@ -631,7 +660,17 @@ function formatter.format(event, cfg, action_name)
         return { string.format('%s: %s: used', actor, action) }
     end
 
-    if cfg.aggregation and cfg.aggregation.targets and #output_groups > 1 then
+    local force_target_aggregation = #output_groups > 1
+    if force_target_aggregation then
+        for _, group in ipairs(output_groups) do
+            if not ABILITIES_RECHARGED[tonumber(group.target.message_id) or 0] then
+                force_target_aggregation = false
+                break
+            end
+        end
+    end
+    if #output_groups > 1 and ((cfg.aggregation and cfg.aggregation.targets)
+            or force_target_aggregation) then
         local merged = {}
         local merged_order = {}
         for _, group in ipairs(output_groups) do

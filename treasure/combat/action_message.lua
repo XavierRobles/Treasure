@@ -18,6 +18,7 @@ function action_message.parse(data)
         actor_id = read_u32_le(data, 0x04),
         target_id = read_u32_le(data, 0x08),
         param = read_u32_le(data, 0x0C),
+        param2 = read_u32_le(data, 0x10),
         actor_index = read_u16_le(data, 0x14),
         target_index = read_u16_le(data, 0x16),
         message_id = (read_u16_le(data, 0x18) or 0) % 0x8000,

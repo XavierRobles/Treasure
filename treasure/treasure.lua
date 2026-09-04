@@ -971,20 +971,6 @@ ashita.events.register('command', 'treasure_cmd', function(e)
             combat_settings.set_enabled(cfg, false)
         elseif action == 'reset' then
             combat_settings.reset(cfg)
-        elseif action == 'debug' then
-            local value = (args[4] or ''):lower()
-            if value ~= 'on' and value ~= 'off' then
-                print_local('Combat Log: usage /tr combat debug <on|off>')
-                return
-            end
-            cfg.combat_log.diagnostics = (value == 'on')
-        elseif action == 'audit' then
-            local value = (args[4] or ''):lower()
-            if value ~= 'on' and value ~= 'off' then
-                print_local('Combat Log: usage /tr combat audit <on|off>')
-                return
-            end
-            cfg.combat_log.capture_all = (value == 'on')
         elseif action == 'status' then
             local cl = cfg.combat_log
             print_local(('Combat Log: %s, preset %s.'):format(cl.enabled and 'enabled' or 'off', cl.preset))
@@ -996,16 +982,9 @@ ashita.events.register('command', 'treasure_cmd', function(e)
             if combat_stats.last_error ~= '' then
                 print_local('Combat last error: ' .. combat_stats.last_error)
             end
-            print_local(('Combat capture: signatures=%d observations=%d supported=%d unsupported=%d/%d dropped=%d.'):format(
-                combat_stats.unknown_signatures, combat_stats.unknown_observations,
-                combat_stats.supported_observations, combat_stats.unsupported_signatures,
-                combat_stats.unsupported_observations, combat_stats.unknown_dropped))
-            if combat_stats.capture_all then
-                print_local('Complete combat audit: active -> ' .. tostring(combat_stats.audit_path or ''))
-            end
             return
         else
-            print_local('Combat Log: usage /tr combat <config|on|off|audit|status|reset>')
+            print_local('Combat Log: usage /tr combat <config|on|off|status|reset>')
             return
         end
         combat_settings.ensure(cfg)
@@ -1405,17 +1384,11 @@ ashita.events.register('d3d_present', 'treasure_present', function()
     present_stage = 'party_chat_queue'
     process_party_chat_queue()
 
-    -- The menu visibility helpers follow raw FFXI pointer chains. During a
-    -- complete combat audit stability and evidence collection take priority;
-    -- avoid those optional reads because a transient game-menu pointer can
-    -- raise a native access violation that Lua's pcall cannot catch.
-    local allow_raw_menu_reads = not (cfg.combat_log and cfg.combat_log.capture_all == true)
     present_stage = 'ui_hidden_memory'
-    local hide_ui = allow_raw_menu_reads
-            and (cfg.menu_hide.hide_when_ui_hidden ~= false)
+    local hide_ui = (cfg.menu_hide.hide_when_ui_hidden ~= false)
             and is_ui_fully_hidden()
     present_stage = 'game_menu_memory'
-    local hide_menu = allow_raw_menu_reads and is_hiding_menu_active(cfg)
+    local hide_menu = is_hiding_menu_active(cfg)
     local hide = hide_ui or hide_menu
     if cfg.visible and not hide then
         present_stage = 'main_ui_render'
@@ -1470,8 +1443,33 @@ ashita.events.register('zone_change', 'treasure_zone', function()
 end)
 
 ------------------------------------------------------------------ texto chat
+-- Keep this handler before treasure_text. The 0x028 packet must reach the
+-- client for floating text; its native chat line is blocked here. Changes
+-- require an in-game test for floating text, parsed chat and no original line.
+ashita.events.register('text_in', 'treasure_combat_suppress', function(e)
+    if not combat.is_replacing_chat() then return end
+    local block_modes = {
+        [20]=true,[21]=true,[22]=true,[23]=true,[24]=true,[25]=true,[26]=true,[27]=true,
+        [28]=true,[29]=true,[30]=true,[31]=true,[32]=true,[33]=true,[34]=true,[35]=true,
+        [40]=true,[41]=true,[42]=true,[43]=true,[56]=true,[57]=true,[59]=true,[60]=true,
+        [61]=true,[63]=true,[104]=true,[109]=true,[114]=true,[162]=true,[163]=true,
+        [164]=true,[165]=true,[181]=true,[185]=true,[186]=true,[187]=true,[188]=true,
+    }
+    if not block_modes[tonumber(e.mode)] or e.injected == true then return end
+    local message = e.message
+    if type(message) ~= 'string' or message:sub(-2) ~= string.char(0x7F, 0x31) then return end
+    local has_1e = message:find(string.char(0x1E), 1, true) ~= nil
+    local has_1f = message:find(string.char(0x1F), 1, true) ~= nil
+    if not has_1e and not has_1f then
+        e.blocked = true
+    elseif has_1e then
+        e.blocked = true
+    end
+end)
+
 ashita.events.register('text_in', 'treasure_text', function(e)
     local original_message = e.message or e.message_modified
+    combat.on_text_in(e)
     -- Horizon has emitted this native system line under more than one chat
     -- mode. The anchored local-player matcher rejects ordinary player chat,
     -- while injected addon output remains excluded.
@@ -1500,7 +1498,6 @@ ashita.events.register('text_in', 'treasure_text', function(e)
         end
     end
 
-    combat.on_text_in(e)
     if combat.is_own_line(original_message) then
         return
     end
@@ -1525,18 +1522,6 @@ ashita.events.register('text_in', 'treasure_text', function(e)
 end)
 
 ashita.events.register('unload', 'treasure_unload', function()
-    -- A native exception aborts d3d_present before it can reset this marker.
-    -- Preserve the last entered stage so the next occurrence is actionable.
-    if present_stage ~= 'idle' and cfg and type(cfg._config_file) == 'string' then
-        local diagnostic_path = cfg._config_file:match('^(.*[\\/])')
-        if diagnostic_path then
-            local diagnostic = io.open(diagnostic_path .. 'present_failure.log', 'a')
-            if diagnostic then
-                diagnostic:write(string.format('%s\t%s\n', os.date('%Y-%m-%d %H:%M:%S'), present_stage))
-                diagnostic:close()
-            end
-        end
-    end
     if session and session.is_event then
         local can_persist = session_event_id(session) ~= 'limbus'
                 or session.limbus_run_started == true

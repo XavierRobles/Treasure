@@ -1,7 +1,7 @@
 local settings = {}
 
 local DEFAULTS = {
-    schema_version = 5,
+    schema_version = 6,
     enabled = false,
     mode = 'off',
     preset = 'group',
@@ -28,13 +28,13 @@ local DEFAULTS = {
         abilities = true,
         items = true,
         defeats = true,
-        other_players = false,
+        other_players = true,
     },
     filter_matrix = {
         self = { misses = true, defenses = true, damage_dealt = true, damage_received = true, actions = true, hp_gained = true, status = true },
         party = { misses = true, defenses = true, damage_dealt = true, damage_received = true, actions = true, hp_gained = true, status = true },
         alliance = { misses = true, defenses = true, damage_dealt = true, damage_received = true, actions = true, hp_gained = true, status = true },
-        others = { misses = false, defenses = false, damage_dealt = false, damage_received = false, actions = false, hp_gained = false, status = false },
+        others = { misses = true, defenses = true, damage_dealt = true, damage_received = true, actions = true, hp_gained = true, status = true },
         enemies = { misses = true, defenses = true, damage_dealt = true, damage_received = true, actions = true, hp_gained = true, status = true },
     },
     colors = {
@@ -44,6 +44,7 @@ local DEFAULTS = {
         enemy = { 1.00, 0.42, 0.38, 1.00 },
         damage = { 1.00, 0.82, 0.28, 1.00 },
         healing = { 0.35, 1.00, 0.48, 1.00 },
+        mp = { 0.25, 0.41, 0.88, 1.00 },
         status = { 0.76, 0.58, 1.00, 1.00 },
         muted = { 0.62, 0.65, 0.70, 1.00 },
     },
@@ -59,13 +60,11 @@ local DEFAULTS = {
         other = { enabled = true, index = 67 },
         damage = { enabled = true, index = 76 },
         healing = { enabled = true, index = 2 },
+        mp = { enabled = true, index = 71 },
         action = { enabled = true, index = 69 },
         critical = { enabled = true, index = 8 },
         status = { enabled = true, index = 81 },
     },
-    diagnostics = false,
-    capture_unknown = true,
-    capture_all = false,
 }
 
 local MODES = { off = true, full = true }
@@ -254,6 +253,14 @@ function settings.ensure(root)
         cfg.aggregation.window_ms = DEFAULTS.aggregation.window_ms
         changed = true
     end
+    -- Migrate the old ungrouped "All" preset.
+    if previous_schema ~= nil and previous_schema < 6 and cfg.preset == 'all'
+            and cfg.aggregation.damage == false and cfg.aggregation.sum_damage == false then
+        cfg.aggregation.damage = true
+        cfg.aggregation.targets = true
+        cfg.aggregation.sum_damage = true
+        changed = true
+    end
     for key, fallback in pairs(DEFAULTS.display) do
         changed = ensure_bool(cfg.display, key, fallback) or changed
     end
@@ -304,10 +311,13 @@ function settings.ensure(root)
             end
         end
     end
-    changed = ensure_bool(cfg, 'diagnostics', DEFAULTS.diagnostics) or changed
-    changed = ensure_bool(cfg, 'capture_unknown', DEFAULTS.capture_unknown) or changed
-    changed = ensure_bool(cfg, 'capture_all', DEFAULTS.capture_all) or changed
-
+    -- Remove capture settings left by development builds.
+    for _, key in ipairs({ 'diagnostics', 'capture_unknown', 'capture_all' }) do
+        if cfg[key] ~= nil then
+            cfg[key] = nil
+            changed = true
+        end
+    end
     return changed
 end
 
@@ -341,9 +351,9 @@ function settings.apply_preset(root, preset)
             cfg.filter_matrix[scope][key] = value
         end
     end
-    cfg.aggregation.damage = (preset ~= 'all')
-    cfg.aggregation.targets = (preset ~= 'all')
-    cfg.aggregation.sum_damage = (preset ~= 'all')
+    cfg.aggregation.damage = true
+    cfg.aggregation.targets = true
+    cfg.aggregation.sum_damage = true
     return true
 end
 

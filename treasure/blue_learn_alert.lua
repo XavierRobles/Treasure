@@ -3,7 +3,7 @@ local M = {}
 local function strip_message(value)
     local message = tostring(value or '')
     message = message:gsub('[\30\31\127].', '')
-    message = message:gsub('[\0-\31\127]', ' ')
+    message = message:gsub('%c', ' ')
     message = message:gsub('%s+', ' ')
     return message:gsub('^%s+', ''):gsub('%s+$', '')
 end

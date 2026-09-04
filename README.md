@@ -33,7 +33,7 @@ The interface includes a single enable switch, presets, per-group category filte
 /tr combat reset
 ```
 
-When enabled, Treasure replaces the game's combat chat with condensed, easier-to-read lines. Messages it does not support keep the original game text, and non-combat chat and system messages are never touched. Filters can be configured independently for you, party members, alliance members, other players and enemies.
+When enabled, Treasure replaces the game's combat chat with condensed, easier-to-read lines while preserving the game's floating combat text. Repeated compatible results are grouped and summed by default in every preset. Messages it does not support keep the original game text, and non-combat chat and system messages are never touched. Filters can be configured independently for you, party members, alliance members, other players and enemies.
 
 Turning the Combat Log off immediately restores the original game combat chat. Everything runs locally on your PC: no combat messages or settings are ever sent to the server.
 
@@ -42,11 +42,12 @@ Turning the Combat Log off immediately restores the original game combat chat. E
 
 - Added the optional **Combat Log**, disabled by default and controlled with a single on/off switch. Turning it off immediately restores the original game combat chat.
 - Added a clear visual configurator with presets and a live preview.
-  - Every Combat Log option now has a hover explanation, including presets, filters, grouping, latency, details, colors, diagnostics and reset.
+  - Every Combat Log option now has a hover explanation, including presets, filters, grouping, latency, details, colors and reset.
   - Filters can be adjusted separately for **You**, **Party**, **Alliance**, **Other players** and **Enemies**.
   - Each group has independent options for misses, defenses, damage dealt, damage received, actions, HP gained and status effects.
 - Added a compact gear button beside Dynamis, Limbus and Weekly. It opens a shared Settings view with General, Dynamis, Limbus, Weekly and Combat Log sections without making the compact window taller.
 - Reduced combat-chat clutter by combining repeated hits, multi-hit attacks and matching multi-target results into easier-to-read lines and totals.
+- Preserved the game's floating combat text while replacing only the original combat lines shown in chat.
 - Reduced the default grouping delay from 250 ms to 100 ms and made queued combat bursts process faster, while keeping the delay adjustable from the interface.
 - Improved Combat Log performance and smoothness, reducing the work Treasure does each frame.
 - Combat lines now identify players and enemies more reliably, and Central Apollyon Gunpod HP updates faster.
@@ -71,11 +72,12 @@ Turning the Combat Log off immediately restores the original game combat chat. E
 
 - Añadido el **Combat Log** opcional, desactivado por defecto y controlado mediante un único interruptor. Al desactivarlo se recupera inmediatamente el chat de combate original del juego.
 - Añadido un configurador visual claro con presets y vista previa en directo.
-  - Cada opción del Combat Log incluye ahora una explicación al pasar el ratón, incluidos presets, filtros, agrupación, latencia, detalles, colores, diagnóstico y reset.
+  - Cada opción del Combat Log incluye ahora una explicación al pasar el ratón, incluidos presets, filtros, agrupación, latencia, detalles, colores y reset.
   - Los filtros pueden ajustarse por separado para **Tú**, **Party**, **Alianza**, **Otros jugadores** y **Enemigos**.
   - Cada grupo dispone de opciones independientes para fallos, defensas, daño causado, daño recibido, acciones, HP ganado y efectos de estado.
 - Añadido un botón compacto con forma de rueda junto a Dynamis, Limbus y Weekly. Abre una vista común de Settings con secciones General, Dynamis, Limbus, Weekly y Combat Log sin aumentar la altura de la ventana compacta.
 - Reducido el ruido del chat de combate agrupando golpes repetidos, ataques multigolpe y resultados iguales sobre varios objetivos en líneas y totales más fáciles de leer.
+- Conservado el texto flotante de combate del juego, reemplazando únicamente las líneas originales mostradas en el chat.
 - Reducido el retraso de agrupación predeterminado de 250 ms a 100 ms y acelerado el procesamiento de ráfagas de mensajes, manteniendo el tiempo ajustable desde la interfaz.
 - Mejorado el rendimiento y la fluidez del Combat Log, reduciendo el trabajo que hace Treasure en cada frame.
 - Las líneas de combate identifican ahora a jugadores y enemigos de forma más fiable, y la vida del Gunpod en Central Apollyon se actualiza más rápido.

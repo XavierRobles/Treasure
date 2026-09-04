@@ -11,7 +11,7 @@ local MAX_ENTITY_INDEX = 2302
 
 local STATUS_MESSAGES = {
     [75] = true, [85] = true, [114] = true, [123] = true, [127] = true, [159] = true, [186] = true,
-    [230] = true, [236] = true, [237] = true, [242] = true, [266] = true,
+    [230] = true, [236] = true, [237] = true, [242] = true, [243] = true, [266] = true,
     [267] = true, [268] = true, [269] = true, [270] = true, [271] = true,
     [272] = true, [277] = true, [278] = true, [279] = true, [280] = true,
     [284] = true, [319] = true, [321] = true, [341] = true, [342] = true, [343] = true,
@@ -224,7 +224,7 @@ function entities.resolve_event(event)
                 target.status_name = clean_name(value)
             end
         end
-        if tonumber(target.message_id) == 125 then
+        if tonumber(target.message_id) == 125 or tonumber(target.message_id) == 674 then
             local ok, item = pcall(function()
                 return AshitaCore:GetResourceManager():GetItemById(tonumber(target.amount) or 0)
             end)
@@ -274,6 +274,8 @@ function entities.action_name(event)
         local message_id = tonumber(target.message_id) or 0
         if message_id == 125 or message_id == 153 then return 'Steal' end
         if message_id == 129 then return 'Mug' end
+        if message_id == 352 or message_id == 353 or message_id == 354
+                or message_id == 576 or message_id == 577 then return 'Ranged Attack' end
     end
     if category == 'melee' or category == 'ranged' or category == 'ranged_ready' then
         return fallback

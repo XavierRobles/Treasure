@@ -47,6 +47,7 @@ local CHAT_COLOR_ROWS = {
     { 'other', 'Alliance / others', 'Color used for alliance members and players outside your party.' },
     { 'damage', 'Damage / HP lost', 'Color used for damage numbers and HP loss.' },
     { 'healing', 'Healing / recovery', 'Color used for healing and recovered HP.' },
+    { 'mp', 'MP recovered', 'Color used when a character recovers MP.' },
     { 'action', 'Actions, casting and verbs', 'Color used for abilities and verbs such as casting, readying and gains.' },
     { 'critical', 'Critical hits', 'Color used to make critical damage stand out.' },
     { 'status', 'Status effects and rolls', 'Color used for buffs, debuffs, resisted effects and rolls.' },
@@ -159,6 +160,8 @@ local function draw_preview(cfg)
         imgui.TextColored(preview('p1', cfg.colors.self), 'Waky')
         imgui.SameLine(0, 0)
         imgui.TextColored(preview('healing', cfg.colors.healing), ': +184 HP')
+        imgui.SameLine(0, 4)
+        imgui.TextColored(preview('mp', cfg.colors.mp), '/ +50 MP')
 
         imgui.TextColored(preview('status', cfg.colors.status), 'Haste')
         imgui.SameLine(0, 4)
@@ -307,19 +310,6 @@ local function render_configuration(root, on_change, embedded)
             imgui.EndTabItem()
         end
 
-        if imgui.BeginTabItem('Advanced') then
-            changed = checkbox('Collect unknown combat cases locally', cfg.capture_unknown, function(value)
-                cfg.capture_unknown = value
-            end, 'Aggregates packet metadata that Treasure cannot format yet. It stores no chat text or character names and sends nothing externally.') or changed
-            changed = checkbox('Complete combat audit', cfg.capture_all, function(value)
-                cfg.capture_all = value
-            end, 'Records every decoded action and Treasure output, plus original game lines when Ashita exposes them. Supported originals stay hidden; unknown cases remain visible for safety.') or changed
-            changed = checkbox('Temporary diagnostics', cfg.diagnostics, function(value)
-                cfg.diagnostics = value
-            end, 'Prints packet and decoder counters to help diagnose Combat Log problems. Leave it off during normal play.') or changed
-            imgui.TextDisabled('Diagnostics never records private chat or player-written messages.')
-            imgui.EndTabItem()
-        end
         imgui.EndTabBar()
     end
 

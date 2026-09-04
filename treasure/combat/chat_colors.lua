@@ -95,6 +95,7 @@ function chat_colors.colorize(line, event, cfg, action_name)
 
     line = replace_pattern(line, 'critical: %d+ damage', state, cfg.critical)
     line = replace_pattern(line, '%+%d+ HP', state, cfg.healing)
+    line = replace_pattern(line, '%+%d+ MP', state, cfg.mp)
     line = replace_pattern(line, '%d+ HP drained', state, cfg.healing)
     line = replace_pattern(line, '%d+ MP drained', state, cfg.healing)
     line = replace_pattern(line, '%d+ damage', state, cfg.damage)

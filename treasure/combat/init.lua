@@ -6,9 +6,9 @@ local entities = require('combat.entities')
 local formatter = require('combat.formatter')
 local magic_burst = require('combat.magic_burst')
 local chat_colors = require('combat.chat_colors')
-local unknowns = require('combat.unknowns')
 local timeutil = require('timeutil')
 local chatutil = require('chatutil')
+local native_messages = require('combat.native_messages')
 
 local subscribers = {}
 local current_settings = nil
@@ -24,11 +24,7 @@ local CHAT_RESET = string.char(0x1E, 1)
 -- A normal game line can begin with one or two reset controls. Use a longer
 -- invisible signature so original combat text is never mistaken for our own.
 local FULL_MARKER = string.rep(CHAT_RESET, 6)
-local DEBUG_PREFIX = '[Treasure Combat Debug] '
-local last_debug_packets = -1
-local last_debug_all = -1
-local last_debug_at = -100
-local FORCE_DIAGNOSTICS = false
+local NATIVE_END = string.char(0x7F, 0x31)
 local stats = {
     packets_all = 0,
     last_packet_id = 0,
@@ -61,6 +57,15 @@ local function clear_pending_visual()
     pending_visual_tail = 0
 end
 
+local function is_native_action_line(message)
+    if type(message) ~= 'string' or message:sub(-#NATIVE_END) ~= NATIVE_END then
+        return false
+    end
+    local has_parameter = message:find(string.char(0x1E), 1, true) ~= nil
+            or message:find(string.char(0x1F), 1, true) ~= nil
+    return not has_parameter or message:find(string.char(0x1E), 1, true) ~= nil
+end
+
 local function push_pending_visual(event)
     if pending_visual_size() >= MAX_PENDING_VISUAL then
         pending_visual[pending_visual_head] = nil
@@ -85,8 +90,6 @@ end
 
 function combat.configure(cfg)
     current_settings = cfg
-    unknowns.configure(type(cfg) == 'table' and cfg.capture_unknown ~= false, nil,
-        type(cfg) == 'table' and cfg.capture_all == true)
     if not combat.is_visual_enabled() then
         clear_pending_visual()
         pending_groups = {}
@@ -94,10 +97,8 @@ function combat.configure(cfg)
     end
 end
 
-function combat.set_character_context(character_dir)
+function combat.set_character_context(_character_dir)
     magic_burst.reset()
-    unknowns.configure(type(current_settings) == 'table' and current_settings.capture_unknown ~= false,
-        character_dir, type(current_settings) == 'table' and current_settings.capture_all == true)
 end
 
 function combat.is_visual_enabled()
@@ -115,11 +116,10 @@ function combat.is_own_line(message)
     return type(message) == 'string'
             and (message:sub(1, #OWN_PREFIX) == OWN_PREFIX
                 or message:sub(1, #FULL_MARKER) == FULL_MARKER
-                or message:sub(1, #DEBUG_PREFIX) == DEBUG_PREFIX)
+                )
 end
 
 function combat.get_stats()
-    local unknown_stats = unknowns.get_stats()
     return {
         packets_all = stats.packets_all,
         last_packet_id = stats.last_packet_id,
@@ -130,15 +130,6 @@ function combat.get_stats()
         pending = pending_visual_size(),
         lines_output = stats.lines_output,
         last_error = stats.last_error,
-        unknown_signatures = unknown_stats.signatures,
-        unknown_observations = unknown_stats.observations,
-        unsupported_signatures = unknown_stats.unsupported_signatures,
-        unsupported_observations = unknown_stats.unsupported_observations,
-        supported_observations = unknown_stats.supported_observations,
-        unknown_dropped = unknown_stats.dropped,
-        unknown_path = unknown_stats.path,
-        audit_path = unknown_stats.audit_path,
-        capture_all = unknown_stats.capture_all,
     }
 end
 
@@ -183,16 +174,19 @@ function combat.on_packet_in(_event)
     if _event.id == 0x029 then
         if not combat.is_visual_enabled() then return false end
         local parsed = action_message.parse(_event.data)
-        if parsed == nil or parsed.message_id ~= 206 then return false end
+        if parsed == nil or (parsed.message_id ~= 206 and parsed.message_id ~= 6) then return false end
 
         local packet_now = timeutil.now()
+        local is_wear_off = parsed.message_id == 206
         local structured = {
             schema_version = 1,
             timestamp = packet_now,
             source = 'packet_0x029',
-            kind = 'status_wear_off',
-            actor = { server_id = parsed.target_id },
-            action = { category = 'status', id = parsed.param, name = 'status wear off' },
+            kind = is_wear_off and 'status_wear_off' or 'action_use',
+            actor = { server_id = is_wear_off and parsed.target_id or parsed.actor_id },
+            action = is_wear_off
+                    and { category = 'status', id = parsed.param, name = 'status wear off' }
+                    or { category = 'melee', id = 0, name = 'melee' },
             targets = { {
                 server_id = parsed.target_id,
                 message_id = parsed.message_id,
@@ -211,12 +205,11 @@ function combat.on_packet_in(_event)
         local target = structured.targets[1]
         target.replace_original = formatter.supports_target(structured, target)
         if not target.replace_original then return false end
-        structured.action.name = target.status_name
+        if is_wear_off then
+            structured.action.name = target.status_name
+        end
 
         if current_settings.mode == 'full' then
-            -- Unlike 0x028 action-result fields, message id 0 in an orphan
-            -- 0x029 packet is rendered by the client as the resource text
-            -- "dummy". Block only this fully reconstructed wear-off packet.
             _event.blocked = true
         end
         stats.decoded = stats.decoded + 1
@@ -268,10 +261,11 @@ function combat.on_packet_in(_event)
         target.channel = channel or target.channel
         target.message_id = tonumber(message_id) or target.message_id
         target.replace_original = formatter.supports_target(structured, target)
-        -- Capture every decoded result, including messages Treasure currently
-        -- considers safe, so semantic losses remain auditable later.
-        unknowns.record(structured, target, data, suppression_source, target.replace_original)
         has_visual_target = has_visual_target or target.replace_original
+        if target.replace_original and native_messages.must_preserve(message_id) then
+            target.preserve_client_message = true
+            return false
+        end
         return target.replace_original
     end
     if current_settings and current_settings.mode == 'full' then
@@ -284,10 +278,8 @@ function combat.on_packet_in(_event)
     end
     structured.timestamp = packet_now
     combat.emit(structured)
-    -- combat.emit keeps its caller immutable, so copy the assigned envelope
-    -- sequence back only to this private queued instance for audit correlation.
     structured.sequence = sequence
-    if has_visual_target or (current_settings and current_settings.capture_all == true) then
+    if has_visual_target then
         push_pending_visual(structured)
         stats.queued = stats.queued + 1
     end
@@ -298,7 +290,6 @@ local function output_event(event, action_name)
     local lines = formatter.format(event, current_settings, action_name)
     local prefix = current_settings.mode == 'full' and FULL_MARKER or OWN_PREFIX
     for _, line in ipairs(lines) do
-        unknowns.record_line('treasure', line, 8)
         if current_settings.mode == 'full' then
             line = chat_colors.colorize(line, event, current_settings.chat_colors or {}, action_name)
         end
@@ -310,28 +301,6 @@ local function output_event(event, action_name)
         else
             stats.last_error = tostring(output_error or 'chat output error')
         end
-    end
-end
-
-local function audit_decoded_event(event, action_name)
-    if not (current_settings and current_settings.capture_all == true) then return end
-    local action = event.action or {}
-    local actor = event.actor or {}
-    for _, target in ipairs(event.targets or {}) do
-        local packet_id = tonumber(event.raw and event.raw.packet_id) or 0x028
-        unknowns.record_line('decoded', string.format(
-            'seq=%d kind=%s category=%s action_id=%d action=%s actor_id=%d actor=%s target_id=%d target=%s message=%d channel=%s outcome=%s amount=%d animation=%d effect=%d scale=%d supported=%s burst=%s status=%s',
-            tonumber(event.sequence) or 0,
-            tostring(event.kind or ''), tostring(action.category or ''),
-            tonumber(action.id) or 0, tostring(action_name or action.name or ''),
-            tonumber(actor.server_id) or 0, tostring(actor.name or ''),
-            tonumber(target.server_id) or 0, tostring(target.name or ''),
-            tonumber(target.message_id) or 0, tostring(target.channel or 'main'),
-            tostring(target.outcome or ''), tonumber(target.amount) or 0,
-            tonumber(target.animation) or 0, tonumber(target.effect) or 0,
-            tonumber(target.scale) or 0, tostring(target.replace_original == true),
-            target.magic_burst == nil and 'packet' or tostring(target.magic_burst == true),
-            tostring(target.status_name or '')), string.format('0x%03X', packet_id))
     end
 end
 
@@ -379,24 +348,37 @@ local function flush_grouped_events(now, force)
     pending_group_order = keep
 end
 
+function combat.should_block_native_text(_event)
+    if type(_event) ~= 'table' or not combat.is_replacing_chat()
+            or _event.injected == true
+            or not native_messages.is_combat_mode(_event.mode)
+            or not is_native_action_line(_event.message) then
+        return false
+    end
+    _event.blocked = true
+    return true
+end
+
 function combat.on_text_in(_event)
     if type(_event) ~= 'table' then return false end
     local raw_message = _event.message
     local message = _event.message_modified or raw_message
     if combat.is_own_line(message) then return false end
+    local block_native = combat.should_block_native_text(_event)
     local has_game_parameter = type(raw_message) == 'string'
             and (raw_message:find(string.char(0x1E), 1, true)
                 or raw_message:find(string.char(0x1F), 1, true))
     if _event.injected ~= true and chatutil.is_player_text_mode(_event.mode) and not has_game_parameter then
         return false
     end
-    unknowns.record_line(_event.injected == true and 'addon' or 'original',
-        chatutil.strip(message), _event.mode)
+    if block_native then
+        _event.blocked = true
+        return true
+    end
     return false
 end
 
 function combat.on_tick(_now)
-    unknowns.flush(_now, false)
     if not combat.is_visual_enabled() then
         clear_pending_visual()
         pending_groups = {}
@@ -407,20 +389,6 @@ function combat.on_tick(_now)
     -- for safe replacement without the former one-frame global scan.
     entities.scan(32)
     local now = tonumber(_now) or 0
-    local debug_changed = last_debug_packets ~= stats.packets_028 or last_debug_all ~= stats.packets_all
-    if (FORCE_DIAGNOSTICS or current_settings.diagnostics == true)
-            and debug_changed and (last_debug_all < 0 or (now - last_debug_at) >= 1.0) then
-        last_debug_packets = stats.packets_028
-        last_debug_all = stats.packets_all
-        last_debug_at = now
-        local debug_line = string.format('active mode=%s all=%d last_id=0x%03X action028=%d decoded=%d errors=%d queued=%d output=%d last=%s',
-            tostring(current_settings.mode), stats.packets_all, stats.last_packet_id, stats.packets_028,
-            stats.decoded, stats.decode_errors, stats.queued, stats.lines_output,
-            stats.last_error ~= '' and stats.last_error or 'none')
-        pcall(function()
-            AshitaCore:GetChatManager():AddChatMessage(8, false, DEBUG_PREFIX .. debug_line)
-        end)
-    end
     local pending_count = pending_visual_size()
     if pending_count == 0 then
         flush_grouped_events(now, false)
@@ -445,7 +413,6 @@ function combat.on_tick(_now)
         entities.resolve_event(event)
         magic_burst.annotate(event)
         local action_name = (event.action and event.action.name) or entities.action_name(event)
-        audit_decoded_event(event, action_name)
         queue_grouped_event(event, action_name, now)
     end
     flush_grouped_events(now, false)
@@ -460,10 +427,6 @@ function combat.shutdown()
     clear_pending_visual()
     pending_groups = {}
     pending_group_order = {}
-    last_debug_packets = -1
-    last_debug_all = -1
-    last_debug_at = -100
-    unknowns.shutdown()
     magic_burst.reset()
 end
 
