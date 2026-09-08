@@ -1,5 +1,18 @@
 local formatter = {}
 
+local DECORATION = {
+    brackets = { '[', ']' }, parentheses = { '(', ')' }, braces = { '{', '}' },
+    quotes = { '"', '"' }, angles = { '<', '>' },
+}
+
+local function decorate(cfg, part, value)
+    value = tostring(value or '')
+    local options = cfg and cfg.decoration
+    local marks = options and options[part] == true and DECORATION[options.style]
+    if not marks or value == '' then return value end
+    return marks[1] .. value .. marks[2]
+end
+
 local HEALING = { [7] = true, [24] = true, [102] = true, [238] = true, [263] = true, [306] = true,
     [318] = true, [367] = true }
 local DAMAGE = { [1] = true, [2] = true, [67] = true, [110] = true, [163] = true, [185] = true, [227] = true,
@@ -65,7 +78,7 @@ local CAST_INTERRUPTED = { [78] = true }
 local MANEUVER_OVERLOAD = { [798] = true }
 local MANEUVER_OVERLOADED = { [799] = true }
 local ENMITY_STOLEN = { [526] = true }
-local FORTIFIED_ARCANA = { [134] = true }
+local FORTIFIED_ARCANA = { [131] = true, [134] = true, [287] = true }
 local TP_INCREASED = { [409] = true }
 local MAGIC_EFFECT_DRAINED = { [430] = true }
 local SCAVENGE_SUCCESS = { [674] = true }
@@ -267,7 +280,7 @@ local function passes_filter(event, target, cfg)
     return filters.abilities ~= false and matrix_allows(cfg, actor_relation, 'actions')
 end
 
-local function describe_result(target, item_event)
+local function describe_result(target, item_event, cfg)
     local class = classify(target)
     local amount = tonumber(target.amount) or 0
     local message_id = tonumber(target.message_id) or 0
@@ -311,7 +324,7 @@ local function describe_result(target, item_event)
     elseif VANISHES[message_id] then text = 'vanishes'
     elseif EFFECTS_REMOVED_COUNT[message_id] then
         text = string.format('%d %s removed', amount, amount == 1 and 'effect' or 'effects')
-    elseif STATUS_REMOVED[message_id] then text = tostring(target.status_name or 'Effect') .. ' removed'
+    elseif STATUS_REMOVED[message_id] then text = decorate(cfg, 'effect_lost', target.status_name or 'Effect') .. ' removed'
     elseif STATUS_DRAIN[message_id] then
         text = tostring(amount) .. (amount == 1 and ' status effect drained' or ' status effects drained')
     elseif RECEIVES_ABILITY_EFFECT[message_id] then text = 'receives the effect'
@@ -326,7 +339,7 @@ local function describe_result(target, item_event)
     elseif MANEUVER_OVERLOADED[message_id] then
         text = 'overload chance ' .. tostring(amount) .. '% (overloaded)'
     elseif ENMITY_STOLEN[message_id] then text = 'enmity stolen'
-    elseif class == 'status' then text = 'gains ' .. tostring(target.status_name or 'an effect')
+    elseif class == 'status' then text = 'gains ' .. decorate(cfg, 'effect_gained', target.status_name or 'an effect')
     elseif USED[message_id] or item_event then text = 'used'
     else text = amount ~= 0 and ('effect ' .. tostring(amount)) or 'used' end
 
@@ -347,12 +360,12 @@ end
 
 local function target_label(groups, cfg)
     if #groups == 1 then
-        return tostring(groups[1].target.name or 'Unknown')
+        return decorate(cfg, 'target', groups[1].target.name or 'Unknown')
     end
     if cfg.display and cfg.display.target_names == true then
         local names = {}
         for _, group in ipairs(groups) do
-            names[#names + 1] = tostring(group.target.name or 'Unknown')
+            names[#names + 1] = decorate(cfg, 'target', group.target.name or 'Unknown')
         end
         return table.concat(names, ', ')
     end
@@ -362,13 +375,13 @@ local function target_label(groups, cfg)
     return tostring(#groups) .. ' targets'
 end
 
-local function entity_label(entity, cfg)
+local function entity_label(entity, cfg, part)
     local label = tostring(entity and entity.name or 'Unknown')
     if cfg and cfg.display and cfg.display.pet_owner == true
             and entity and entity.owner_name and entity.owner_name ~= '' then
         label = label .. ' (' .. tostring(entity.owner_name) .. ')'
     end
-    return label
+    return decorate(cfg, part or 'target', label)
 end
 
 local function all_results_equal(results)
@@ -384,7 +397,7 @@ function formatter.format(event, cfg, action_name)
     if type(event) ~= 'table' or type(event.actor) ~= 'table' then
         return {}
     end
-    local actor = entity_label(event.actor, cfg)
+    local actor = entity_label(event.actor, cfg, 'actor')
     local action = tostring(action_name or (event.action and event.action.category) or 'action')
     local lines = {}
 
@@ -392,7 +405,7 @@ function formatter.format(event, cfg, action_name)
         local target = event.targets and event.targets[1]
         if target and target.replace_original ~= false and passes_filter(event, target, cfg) then
             return { string.format('%s: %s wears off', entity_label(target, cfg),
-                    tostring(target.status_name or 'Effect')) }
+                    decorate(cfg, 'effect_lost', target.status_name or 'Effect')) }
         end
         return {}
     end
@@ -409,6 +422,7 @@ function formatter.format(event, cfg, action_name)
             break
         end
     end
+    action = decorate(cfg, 'action', action)
 
     -- Message 84 describes the actor being unable to act, even though magic
     -- packets retain the intended spell target in the target field.
@@ -522,7 +536,7 @@ function formatter.format(event, cfg, action_name)
                     and matrix_allows(cfg, event.actor and event.actor.relation, 'status') then
                 status_spike_lines[#status_spike_lines + 1] = string.format(
                         "%s's armor causes %s to gain %s", entity_label(target, cfg), actor,
-                        tostring(target.status_name or 'an effect'))
+                        decorate(cfg, 'effect_gained', target.status_name or 'an effect'))
             end
         elseif not superseded_no_effect and target.replace_original ~= false
                 and passes_filter(event, target, cfg) then
@@ -550,7 +564,7 @@ function formatter.format(event, cfg, action_name)
                 grouped[key] = group
                 order[#order + 1] = key
             end
-            group.results[#group.results + 1] = describe_result(target, is_item_event(event))
+            group.results[#group.results + 1] = describe_result(target, is_item_event(event), cfg)
             group.total = group.total + (tonumber(target.amount) or 0)
         end
     end

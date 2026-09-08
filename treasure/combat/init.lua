@@ -291,7 +291,8 @@ local function output_event(event, action_name)
     local prefix = current_settings.mode == 'full' and FULL_MARKER or OWN_PREFIX
     for _, line in ipairs(lines) do
         if current_settings.mode == 'full' then
-            line = chat_colors.colorize(line, event, current_settings.chat_colors or {}, action_name)
+            line = chat_colors.colorize(line, event, current_settings.chat_colors or {}, action_name,
+                    current_settings.decoration or {}, current_settings.display or {})
         end
         local ok, output_error = pcall(function()
             AshitaCore:GetChatManager():AddChatMessage(8, false, prefix .. line)

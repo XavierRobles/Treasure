@@ -1,7 +1,7 @@
 local settings = {}
 
 local DEFAULTS = {
-    schema_version = 6,
+    schema_version = 8,
     enabled = false,
     mode = 'off',
     preset = 'group',
@@ -17,6 +17,14 @@ local DEFAULTS = {
         target_count = true,
         target_names = false,
         show_totals = true,
+    },
+    decoration = {
+        style = 'none',
+        actor = false,
+        action = false,
+        target = false,
+        effect_gained = false,
+        effect_lost = false,
     },
     filters = {
         outgoing_damage = true,
@@ -64,11 +72,18 @@ local DEFAULTS = {
         action = { enabled = true, index = 69 },
         critical = { enabled = true, index = 8 },
         status = { enabled = true, index = 81 },
+        decoration_actor = { enabled = false, index = 1 },
+        decoration_action = { enabled = false, index = 1 },
+        decoration_target = { enabled = false, index = 1 },
+        decoration_effect_gained = { enabled = false, index = 1 },
+        decoration_effect_lost = { enabled = false, index = 1 },
     },
 }
 
 local MODES = { off = true, full = true }
 local PRESETS = { all = true, group = true, compact = true, support = true, custom = true }
+local DECORATION_STYLES = { none = true, brackets = true, parentheses = true,
+    braces = true, quotes = true, angles = true }
 
 local PRESET_FILTERS = {
     all = {
@@ -234,7 +249,7 @@ function settings.ensure(root)
         changed = true
     end
 
-    for _, section in ipairs({ 'aggregation', 'display', 'filters', 'filter_matrix', 'colors', 'chat_colors' }) do
+    for _, section in ipairs({ 'aggregation', 'display', 'decoration', 'filters', 'filter_matrix', 'colors', 'chat_colors' }) do
         changed = ensure_table(cfg, section) or changed
     end
 
@@ -263,6 +278,15 @@ function settings.ensure(root)
     end
     for key, fallback in pairs(DEFAULTS.display) do
         changed = ensure_bool(cfg.display, key, fallback) or changed
+    end
+    if not DECORATION_STYLES[cfg.decoration.style] then
+        cfg.decoration.style = DEFAULTS.decoration.style
+        changed = true
+    end
+    for key, fallback in pairs(DEFAULTS.decoration) do
+        if key ~= 'style' then
+            changed = ensure_bool(cfg.decoration, key, fallback) or changed
+        end
     end
     for key, fallback in pairs(DEFAULTS.filters) do
         changed = ensure_bool(cfg.filters, key, fallback) or changed

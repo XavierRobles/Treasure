@@ -51,6 +51,11 @@ local CHAT_COLOR_ROWS = {
     { 'action', 'Actions, casting and verbs', 'Color used for abilities and verbs such as casting, readying and gains.' },
     { 'critical', 'Critical hits', 'Color used to make critical damage stand out.' },
     { 'status', 'Status effects and rolls', 'Color used for buffs, debuffs, resisted effects and rolls.' },
+    { 'decoration_actor', 'Actor delimiters', 'Optional color for delimiters around actors.' },
+    { 'decoration_action', 'Action delimiters', 'Optional color for delimiters around actions.' },
+    { 'decoration_target', 'Target delimiters', 'Optional color for delimiters around targets.' },
+    { 'decoration_effect_gained', 'Gained-effect delimiters', 'Optional color for delimiters around gained effects.' },
+    { 'decoration_effect_lost', 'Lost-effect delimiters', 'Optional color for delimiters around lost effects.' },
 }
 
 local PRESETS = {
@@ -58,6 +63,17 @@ local PRESETS = {
     { 'group', 'Group', 'Shows your party and alliance while hiding unrelated players.' },
     { 'compact', 'Compact', 'Hides low-value messages such as misses and most preparation text.' },
     { 'support', 'Support', 'Prioritizes healing, status effects and incoming combat information.' },
+}
+
+local DECORATION_STYLES = {
+    { 'none', 'None' }, { 'brackets', '[Square brackets]' },
+    { 'parentheses', '(Parentheses)' }, { 'braces', '{Braces}' },
+    { 'quotes', '"Quotes"' }, { 'angles', '<Angle brackets>' },
+}
+
+local DECORATION_PARTS = {
+    { 'actor', 'Actors' }, { 'action', 'Actions' }, { 'target', 'Targets' },
+    { 'effect_gained', 'Effects gained' }, { 'effect_lost', 'Effects lost' },
 }
 
 local function notify_changed(callback)
@@ -139,6 +155,15 @@ local function draw_preview(cfg)
         if palette.enabled == false or (entry and entry.enabled == false) then return { 1, 1, 1, 1 } end
         return combat_chat_colors.preview_rgba(entry, fallback)
     end
+    local function decorated(part, value)
+        local marks = {
+            brackets = { '[', ']' }, parentheses = { '(', ')' }, braces = { '{', '}' },
+            quotes = { '"', '"' }, angles = { '<', '>' },
+        }
+        local options = cfg.decoration or {}
+        local pair = options[part] == true and marks[options.style]
+        return pair and (pair[1] .. value .. pair[2]) or value
+    end
     imgui.TextUnformatted('Live preview')
     imgui.BeginChild('combat_preview', { 0, 122 }, CHILD_BORDER, 0)
     if cfg.enabled ~= true then
@@ -153,11 +178,11 @@ local function draw_preview(cfg)
         imgui.SameLine(0, 4)
         imgui.TextColored(preview('damage', cfg.colors.damage), ': 32 + 41 + 29 damage (102)')
 
-        imgui.TextColored(preview('p2', cfg.colors.party), 'Alice')
+        imgui.TextColored(preview('p2', cfg.colors.party), decorated('actor', 'Alice'))
         imgui.SameLine(0, 4)
-        imgui.TextColored(preview('action', cfg.colors.status), ' casts Cure III -> ')
+        imgui.TextColored(preview('action', cfg.colors.status), ' casts ' .. decorated('action', 'Cure III') .. ' -> ')
         imgui.SameLine(0, 0)
-        imgui.TextColored(preview('p1', cfg.colors.self), 'Waky')
+        imgui.TextColored(preview('p1', cfg.colors.self), decorated('target', 'Waky'))
         imgui.SameLine(0, 0)
         imgui.TextColored(preview('healing', cfg.colors.healing), ': +184 HP')
         imgui.SameLine(0, 4)
@@ -287,6 +312,36 @@ local function render_configuration(root, on_change, embedded)
             changed = checkbox('Show hit / effect counts', cfg.display.show_totals, function(value)
                 cfg.display.show_totals = value
             end, 'Shows hit or effect counts beside grouped damage and healing totals.') or changed
+            imgui.Separator()
+            imgui.TextUnformatted('Text decoration')
+            local current_style = cfg.decoration.style or 'none'
+            local current_label = 'None'
+            for _, option in ipairs(DECORATION_STYLES) do
+                if option[1] == current_style then current_label = option[2] end
+            end
+            imgui.SetNextItemWidth(210)
+            if imgui.BeginCombo('Style##combat_decoration_style', current_label) then
+                for _, option in ipairs(DECORATION_STYLES) do
+                    if imgui.Selectable(option[2] .. '##combat_decoration_' .. option[1], current_style == option[1]) then
+                        cfg.decoration.style = option[1]
+                        current_style = option[1]
+                        changed = true
+                    end
+                end
+                imgui.EndCombo()
+            end
+            local all_decorated = true
+            for _, part in ipairs(DECORATION_PARTS) do
+                all_decorated = all_decorated and cfg.decoration[part[1]] == true
+            end
+            changed = checkbox('All##combat_decoration_all', all_decorated, function(value)
+                for _, part in ipairs(DECORATION_PARTS) do cfg.decoration[part[1]] = value end
+            end, 'Applies the selected style to every supported part.') or changed
+            for _, part in ipairs(DECORATION_PARTS) do
+                changed = checkbox(part[2] .. '##combat_decoration_' .. part[1], cfg.decoration[part[1]], function(value)
+                    cfg.decoration[part[1]] = value
+                end, 'Applies the selected style only to ' .. part[2]:lower() .. '.') or changed
+            end
             imgui.EndTabItem()
         end
 

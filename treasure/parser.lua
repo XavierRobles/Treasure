@@ -65,6 +65,7 @@ local function is_cur(i)
             or i:find('bill')
             or i:find('jadeshell')
             or i:find('silverpiece')
+            or i:find('ancient beastcoin', 1, true)
 end
 
 local STEAL_CURRENCIES = {

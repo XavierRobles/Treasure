@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.1.4\
+**Version:** 1.1.5\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -38,6 +38,26 @@ When enabled, Treasure replaces the game's combat chat with condensed, easier-to
 Turning the Combat Log off immediately restores the original game combat chat. Everything runs locally on your PC: no combat messages or settings are ever sent to the server.
 
 ## 📌 Changelog
+### v1.1.5 (English)
+
+- Added optional text decoration for actors, actions, targets, gained effects and lost effects, with independent styles and delimiter colors.
+- **Jump**, **High Jump** and **Super Jump** are now displayed correctly.
+- **Holy Circle** and **Arcane Circle** are now displayed correctly for every affected party member.
+- Status effects now clearly distinguish natural expiration (**wears off**) from active removal (**removed**).
+- Improved support for uncommon combat results, including Wild Card, Goblin Dice, monster Provoke, Mug failures, status effects caused by spikes, guarded critical hits and several job abilities.
+- Fixed an issue that prevented Cosmo-Cleanse and the Red, Black and White Cards from displaying their correct status in Limbus.
+- Fixed Ancient Beastcoins being counted as equipment instead of Limbus currency.
+
+### v1.1.5 (Español)
+
+- Añadida decoración de texto opcional para actores, acciones, objetivos, efectos ganados y efectos perdidos, con estilos y colores de delimitador independientes.
+- **Jump**, **High Jump** y **Super Jump** se muestran ahora correctamente.
+- **Holy Circle** y **Arcane Circle** se muestran ahora correctamente para todos los miembros afectados.
+- Los efectos de estado distinguen ahora claramente entre una expiración natural (**wears off**) y una eliminación activa (**removed**).
+- Mejorado el soporte para resultados de combate poco comunes, incluidos Wild Card, Goblin Dice, Provoke de monstruos, fallos de Mug, estados causados por spikes, críticos bloqueados con Guard y varias job abilities.
+- Corregido un error que impedía mostrar correctamente el estado de Cosmo-Cleanse y las Cards roja, negra y blanca en Limbus.
+- Corregido un error que contabilizaba las Ancient Beastcoins como equipo en lugar de moneda de Limbus.
+
 ### v1.1.4 (English)
 
 - Added the optional **Combat Log**, disabled by default and controlled with a single on/off switch. Turning it off immediately restores the original game combat chat.

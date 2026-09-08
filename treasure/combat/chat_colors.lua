@@ -87,11 +87,57 @@ local function entity_color(cfg, entity)
     return cfg.other
 end
 
-function chat_colors.colorize(line, event, cfg, action_name)
+local DECORATION = {
+    brackets = { '[', ']' }, parentheses = { '(', ')' }, braces = { '{', '}' },
+    quotes = { '"', '"' }, angles = { '<', '>' },
+}
+
+local function color_decoration(line, value, marks, state, entry)
+    value = tostring(value or '')
+    if value == '' or not marks or not entry_enabled(entry) then return line end
+    local pattern = escape_pattern(marks[1] .. value .. marks[2])
+    return line:gsub(pattern, function()
+        return add_token(state, marks[1], entry) .. value .. add_token(state, marks[2], entry)
+    end)
+end
+
+local function entity_label(entity, display)
+    local label = tostring(entity and entity.name or '')
+    if display and display.pet_owner == true and entity and entity.owner_name and entity.owner_name ~= '' then
+        label = label .. ' (' .. tostring(entity.owner_name) .. ')'
+    end
+    return label
+end
+
+function chat_colors.colorize(line, event, cfg, action_name, decoration, display)
     if type(line) ~= 'string' or type(cfg) ~= 'table' or cfg.enabled == false then
         return line
     end
     local state = { count = 0, values = {} }
+
+    local marks = DECORATION[decoration and decoration.style]
+    if marks then
+        if decoration.actor == true then
+            line = color_decoration(line, entity_label(event and event.actor, display), marks, state,
+                    cfg.decoration_actor)
+        end
+        if decoration.action == true then
+            line = color_decoration(line, action_name, marks, state, cfg.decoration_action)
+        end
+        for _, target in ipairs((event and event.targets) or {}) do
+            if decoration.target == true then
+                line = color_decoration(line, entity_label(target, display), marks, state,
+                        cfg.decoration_target)
+            end
+            local status = target and target.status_name
+            if decoration.effect_gained == true then
+                line = color_decoration(line, status, marks, state, cfg.decoration_effect_gained)
+            end
+            if decoration.effect_lost == true then
+                line = color_decoration(line, status, marks, state, cfg.decoration_effect_lost)
+            end
+        end
+    end
 
     line = replace_pattern(line, 'critical: %d+ damage', state, cfg.critical)
     line = replace_pattern(line, '%+%d+ HP', state, cfg.healing)

@@ -18,6 +18,9 @@ local STATUS_MESSAGES = {
     [83] = true, [126] = true, [160] = true, [164] = true, [206] = true, [374] = true, [776] = true,
 }
 
+-- Message IDs distinguish job abilities emitted as SkillFinish.
+local JOB_ABILITY_MESSAGES = { [100] = true, [317] = true, [324] = true }
+
 local function clean_name(value)
     local name = tostring(value or ''):gsub('%z', ''):gsub('%s+$', '')
     return name ~= '' and name or nil
@@ -299,6 +302,15 @@ function entities.action_name(event)
                 or category == 'pet_ability_ready'
                 or category == 'dancer_ability' or category == 'rune_ability' then
             return resource_name(resources:GetAbilityById(id + 512))
+        end
+        if category == 'weapon_skill' then
+            for _, target in ipairs((event and event.targets) or {}) do
+                if JOB_ABILITY_MESSAGES[tonumber(target.message_id) or 0] then
+                    local ability_name = resource_name(resources:GetAbilityById(id + 512))
+                    if ability_name then return ability_name end
+                    break
+                end
+            end
         end
         return resource_name(resources:GetAbilityById(id))
     end)

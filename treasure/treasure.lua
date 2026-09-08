@@ -10,15 +10,16 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.1.4'
+addon.version = '1.1.5'
 
 require('common')
--- Ashita can retain required Lua modules across an addon reload. Refresh all
--- Treasure combat modules so deployed fixes take effect without restarting XI.
+-- Refresh changed modules during addon reloads.
 local treasure_reload_modules = {}
 for module_name in pairs(package.loaded) do
     if module_name == 'ui' or module_name == 'ui_combat'
             or module_name == 'blue_learn_alert' or module_name == 'sound_volume'
+            or module_name == 'parser' or module_name == 'key_items'
+            or module_name == 'ui_event_router' or module_name == 'ui_event_limbus'
             or module_name:match('^combat%.') then
         treasure_reload_modules[#treasure_reload_modules + 1] = module_name
     end
@@ -28,6 +29,7 @@ for _, module_name in ipairs(treasure_reload_modules) do
 end
 local core = require('core')
 local parser = require('parser')
+local key_items = require('key_items')
 local store = require('store')
 local ui = require('ui')
 local ui_combat = require('ui_combat')
@@ -1229,6 +1231,7 @@ local function notify_blue_magic_learned(e)
 end
 
 ashita.events.register('packet_in', 'login_detector', function(e)
+    key_items.on_packet_in(e)
     -- Keep the learning alert independent from combat decoding. In particular,
     -- a failure or future early-exit in the combat path must not swallow 0x029.
     notify_blue_magic_learned(e)

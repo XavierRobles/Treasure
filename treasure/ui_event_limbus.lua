@@ -8,13 +8,12 @@ local TRANSITION_PENDING_SECONDS = 6
 local rm = AshitaCore:GetResourceManager()
 
 local KEY_ITEMS = {
-    { label = 'Cosmo-Cleanse', names = { 'Cosmo-Cleanse', 'Cosmo Cleanse' }, fallback_id = 734 },
-    { label = 'Red Card',      names = { 'Red Card' } },
-    { label = 'Black Card',    names = { 'Black Card' } },
-    { label = 'White Card',    names = { 'White Card' } },
+    { label = 'Cosmo-Cleanse', id = 734 },
+    { label = 'Red Card',      id = 350 },
+    { label = 'Black Card',    id = 351 },
+    { label = 'White Card',    id = 349 },
 }
-
-local cached_ki_ids = {}
+local key_items = require('key_items')
 
 local function is_coin_name(name)
     local s = tostring(name or '')
@@ -307,42 +306,6 @@ local function split_participants(sess, keys, is_valid_player_name)
     end
     table.sort(out)
     return out
-end
-
-local function resolve_key_item_id(entry)
-    local key = entry.label
-    if cached_ki_ids[key] ~= nil then
-        return cached_ki_ids[key]
-    end
-
-    local rm = AshitaCore:GetResourceManager()
-    local found = nil
-    for _, name in ipairs(entry.names or {}) do
-        local id = rm and rm:GetString('keyitems.names', name, 2)
-        if type(id) == 'number' and id > 0 then
-            found = id
-            break
-        end
-    end
-
-    if not found then
-        found = tonumber(entry.fallback_id) or -1
-    end
-
-    cached_ki_ids[key] = found
-    return found
-end
-
-local function has_key_item(id)
-    id = tonumber(id) or -1
-    if id <= 0 then
-        return nil
-    end
-    local pm = AshitaCore:GetMemoryManager():GetPlayer()
-    if not (pm and pm.HasKeyItem) then
-        return nil
-    end
-    return pm:HasKeyItem(id) == true
 end
 
 function ui_limbus.top_left_status(ctx)
@@ -791,8 +754,7 @@ function ui_limbus.render(ctx)
                     imgui.TableHeadersRow()
 
                     for _, ki in ipairs(KEY_ITEMS) do
-                        local id = resolve_key_item_id(ki)
-                        local have = has_key_item(id)
+                        local have = key_items.has(ki.id)
                         imgui.TableNextRow()
                         imgui.TableSetColumnIndex(0)
                         imgui.TextColored(C.ITEM, ki.label)
