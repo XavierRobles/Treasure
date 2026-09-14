@@ -1,6 +1,6 @@
 # Treasure <img width="60" height="60" alt="cofre" src="https://github.com/user-attachments/assets/397760bf-2181-40d5-b9db-a3e67a5f5c11" />
 
-**Version:** 1.1.5\
+**Version:** 1.1.6\
 **Author:** Waky  
 **License:** GNU General Public License v3  
 **Link:** <https://github.com/XavierRobles/treasure>
@@ -38,6 +38,18 @@ When enabled, Treasure replaces the game's combat chat with condensed, easier-to
 Turning the Combat Log off immediately restores the original game combat chat. Everything runs locally on your PC: no combat messages or settings are ever sent to the server.
 
 ## 📌 Changelog
+### v1.1.6 (English)
+
+- **Weapon Bash** and **Shield Bash** are now displayed correctly instead of appearing as weapon skills.
+- **Scavenge** now shows the total number of items found and uses the correct singular or plural item name.
+- Improved the display of **Whispering Wind**, **Dream Shroud**, **Ecliptic Growl**, **Collaborator** and Limbus Armoury Crate recovery effects.
+
+### v1.1.6 (Español)
+
+- **Weapon Bash** y **Shield Bash** se muestran ahora correctamente en lugar de aparecer como weapon skills.
+- **Scavenge** muestra ahora la cantidad total de objetos encontrados y utiliza correctamente el nombre singular o plural.
+- Mejorada la visualización de **Whispering Wind**, **Dream Shroud**, **Ecliptic Growl**, **Collaborator** y los efectos de recuperación de los Armoury Crates de Limbus.
+
 ### v1.1.5 (English)
 
 - Added optional text decoration for actors, actions, targets, gained effects and lost effects, with independent styles and delimiter colors.

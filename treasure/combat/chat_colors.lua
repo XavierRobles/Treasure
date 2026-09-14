@@ -92,13 +92,16 @@ local DECORATION = {
     quotes = { '"', '"' }, angles = { '<', '>' },
 }
 
-local function color_decoration(line, value, marks, state, entry)
+local function color_decoration(line, value, marks, state, delimiter_entry, value_entry, limit)
     value = tostring(value or '')
-    if value == '' or not marks or not entry_enabled(entry) then return line end
+    if value == '' or not marks then return line end
+    local marks_entry = entry_enabled(delimiter_entry) and delimiter_entry or value_entry
     local pattern = escape_pattern(marks[1] .. value .. marks[2])
     return line:gsub(pattern, function()
-        return add_token(state, marks[1], entry) .. value .. add_token(state, marks[2], entry)
-    end)
+        return add_token(state, marks[1], marks_entry)
+                .. add_token(state, value, value_entry)
+                .. add_token(state, marks[2], marks_entry)
+    end, limit)
 end
 
 local function entity_label(entity, display)
@@ -119,22 +122,27 @@ function chat_colors.colorize(line, event, cfg, action_name, decoration, display
     if marks then
         if decoration.actor == true then
             line = color_decoration(line, entity_label(event and event.actor, display), marks, state,
-                    cfg.decoration_actor)
+                    cfg.decoration_actor, entity_color(cfg, event and event.actor), 1)
         end
         if decoration.action == true then
-            line = color_decoration(line, action_name, marks, state, cfg.decoration_action)
+            line = color_decoration(line, action_name, marks, state, cfg.decoration_action, cfg.action)
         end
         for _, target in ipairs((event and event.targets) or {}) do
             if decoration.target == true then
                 line = color_decoration(line, entity_label(target, display), marks, state,
-                        cfg.decoration_target)
+                        cfg.decoration_target, entity_color(cfg, target), 1)
             end
             local status = target and target.status_name
-            if decoration.effect_gained == true then
-                line = color_decoration(line, status, marks, state, cfg.decoration_effect_gained)
+            local wrapped = status and (marks[1] .. status .. marks[2]) or ''
+            if decoration.effect_gained == true and line:find('gains ' .. wrapped, 1, true) then
+                line = color_decoration(line, status, marks, state,
+                        cfg.decoration_effect_gained, cfg.status, 1)
             end
-            if decoration.effect_lost == true then
-                line = color_decoration(line, status, marks, state, cfg.decoration_effect_lost)
+            if decoration.effect_lost == true
+                    and (line:find(wrapped .. ' removed', 1, true)
+                        or line:find(wrapped .. ' wears off', 1, true)) then
+                line = color_decoration(line, status, marks, state,
+                        cfg.decoration_effect_lost, cfg.status, 1)
             end
         end
     end
@@ -185,7 +193,9 @@ function chat_colors.colorize(line, event, cfg, action_name, decoration, display
         end
     end
 
-    for token, value in pairs(state.values) do
+    for index = state.count, 1, -1 do
+        local token = string.format('\7TC%03d\7', index)
+        local value = state.values[token]
         line = line:gsub(token, function() return value end)
     end
     return line

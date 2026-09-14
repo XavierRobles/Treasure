@@ -78,10 +78,16 @@ local CAST_INTERRUPTED = { [78] = true }
 local MANEUVER_OVERLOAD = { [798] = true }
 local MANEUVER_OVERLOADED = { [799] = true }
 local ENMITY_STOLEN = { [526] = true }
+local ENMITY_TRANSFERRED_TO_PET = { [528] = true }
 local FORTIFIED_ARCANA = { [131] = true, [134] = true, [287] = true }
 local TP_INCREASED = { [409] = true }
 local MAGIC_EFFECT_DRAINED = { [430] = true }
-local SCAVENGE_SUCCESS = { [674] = true }
+local SCAVENGE_NOTHING = { [139] = true }
+local SCAVENGE_SINGLE = { [140] = true }
+local SCAVENGE_MULTIPLE = { [674] = true }
+local RECOVERS_HP_MP = { [26] = true }
+local ALL_ATTRIBUTES_BOOSTED = { [364] = true, [365] = true }
+local MAGIC_ATTACK_DEFENSE_BOOSTED = { [414] = true, [415] = true }
 local SKILLCHAINS = {
     [288] = 'Light', [289] = 'Darkness', [290] = 'Gravitation', [291] = 'Fragmentation',
     [292] = 'Distortion', [293] = 'Fusion', [294] = 'Compression', [295] = 'Liquefaction',
@@ -172,11 +178,14 @@ function formatter.supports_target(event, target)
             or DEFEAT[message_id] == true or STEAL_SUCCESS[message_id] == true or STEAL_FAILURE[message_id] == true
             or MUG_SUCCESS[message_id] == true or MUG_FAILURE[message_id] == true
             or FORTIFIED_ARCANA[message_id] == true or TP_INCREASED[message_id] == true
-            or MAGIC_EFFECT_DRAINED[message_id] == true or SCAVENGE_SUCCESS[message_id] == true
+            or MAGIC_EFFECT_DRAINED[message_id] == true or SCAVENGE_NOTHING[message_id] == true
+            or SCAVENGE_SINGLE[message_id] == true or SCAVENGE_MULTIPLE[message_id] == true
+            or RECOVERS_HP_MP[message_id] == true or ALL_ATTRIBUTES_BOOSTED[message_id] == true
+            or MAGIC_ATTACK_DEFENSE_BOOSTED[message_id] == true
             or STATUS_SPIKES[message_id] == true or CHARM_SUCCESS[message_id] == true
             or CHARM_FAILURE[message_id] == true or TAME_SUCCESS[message_id] == true
             or MANEUVER_OVERLOAD[message_id] == true or MANEUVER_OVERLOADED[message_id] == true
-            or ENMITY_STOLEN[message_id] == true
+            or ENMITY_STOLEN[message_id] == true or ENMITY_TRANSFERRED_TO_PET[message_id] == true
 end
 
 local function filter_scope(relation)
@@ -212,7 +221,9 @@ local function classify(target)
     if ACTION_MISS[message_id] then return 'misses' end
     if ROLL[message_id] then return 'status' end
     if ATTACKS_ENHANCED[message_id] then return 'status' end
-    if ATTRIBUTE_ENHANCED[message_id] or PET_POWERS_INCREASE[message_id] then return 'status' end
+    if ATTRIBUTE_ENHANCED[message_id] or PET_POWERS_INCREASE[message_id]
+            or ALL_ATTRIBUTES_BOOSTED[message_id]
+            or MAGIC_ATTACK_DEFENSE_BOOSTED[message_id] then return 'status' end
     if ABILITIES_RECHARGED[message_id] then return 'status' end
     if FORTIFIED_ARCANA[message_id] or TP_INCREASED[message_id] then return 'status' end
     if CHARM_SUCCESS[message_id] or TAME_SUCCESS[message_id] then return 'status' end
@@ -220,7 +231,9 @@ local function classify(target)
     if STEAL_SUCCESS[message_id] or STEAL_FAILURE[message_id] or MUG_SUCCESS[message_id]
             or MUG_FAILURE[message_id] or MANEUVER_OVERLOAD[message_id]
             or MANEUVER_OVERLOADED[message_id]
-            or ENMITY_STOLEN[message_id] then return 'action' end
+            or ENMITY_STOLEN[message_id] or ENMITY_TRANSFERRED_TO_PET[message_id]
+            or SCAVENGE_NOTHING[message_id] or SCAVENGE_SINGLE[message_id]
+            or SCAVENGE_MULTIPLE[message_id] then return 'action' end
     if STATUS_SPIKES[message_id] then return 'status' end
     if STATUS_WEAR_OFF[message_id] then return 'status' end
     if CASTS_ON[message_id] then return 'action' end
@@ -285,7 +298,8 @@ local function describe_result(target, item_event, cfg)
     local amount = tonumber(target.amount) or 0
     local message_id = tonumber(target.message_id) or 0
     local text
-    if HP_DRAIN[message_id] then text = tostring(amount) .. ' HP drained'
+    if RECOVERS_HP_MP[message_id] then text = 'HP and MP recovered'
+    elseif HP_DRAIN[message_id] then text = tostring(amount) .. ' HP drained'
     elseif MP_DRAIN[message_id] then text = tostring(amount) .. ' MP drained'
     elseif MP_RECOVERY[message_id] then text = '+' .. tostring(amount) .. ' MP'
     elseif TP_DRAIN[message_id] then text = tostring(amount) .. ' TP drained'
@@ -313,8 +327,13 @@ local function describe_result(target, item_event, cfg)
     elseif TP_INCREASED[message_id] then text = 'TP increased to ' .. tostring(amount)
     elseif FORTIFIED_ARCANA[message_id] then text = 'fortified against arcana'
     elseif MAGIC_EFFECT_DRAINED[message_id] then text = '1 magic effect drained'
-    elseif SCAVENGE_SUCCESS[message_id] then
-        text = 'finds ' .. tostring(target.item_name or ('item #' .. tostring(amount)))
+    elseif SCAVENGE_NOTHING[message_id] then text = 'finds nothing'
+    elseif SCAVENGE_SINGLE[message_id] then
+        text = 'finds 1 ' .. tostring(target.item_name or ('item #' .. tostring(amount)))
+    elseif SCAVENGE_MULTIPLE[message_id] then
+        local count = tonumber(target.additional_effect and target.additional_effect.param) or 0
+        local item = target.item_name_plural or target.item_name or ('item #' .. tostring(amount))
+        text = 'finds ' .. tostring(count) .. ' ' .. tostring(item)
     elseif ATTACKS_ENHANCED[message_id] then text = 'attacks enhanced'
     elseif ATTRIBUTE_ENHANCED[message_id] then text = ATTRIBUTE_ENHANCED[message_id]
     elseif PET_POWERS_INCREASE[message_id] then text = "pet's powers increase"
@@ -339,6 +358,10 @@ local function describe_result(target, item_event, cfg)
     elseif MANEUVER_OVERLOADED[message_id] then
         text = 'overload chance ' .. tostring(amount) .. '% (overloaded)'
     elseif ENMITY_STOLEN[message_id] then text = 'enmity stolen'
+    elseif ENMITY_TRANSFERRED_TO_PET[message_id] then text = 'enmity transferred to pet'
+    elseif ALL_ATTRIBUTES_BOOSTED[message_id] then text = 'all attributes enhanced'
+    elseif MAGIC_ATTACK_DEFENSE_BOOSTED[message_id] then
+        text = 'magic attack and magic defense enhanced'
     elseif class == 'status' then text = 'gains ' .. decorate(cfg, 'effect_gained', target.status_name or 'an effect')
     elseif USED[message_id] or item_event then text = 'used'
     else text = amount ~= 0 and ('effect ' .. tostring(amount)) or 'used' end

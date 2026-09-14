@@ -10,7 +10,7 @@
 addon = addon or {}
 addon.name = 'Treasure'
 addon.author = 'Waky'
-addon.version = '1.1.5'
+addon.version = '1.1.6'
 
 require('common')
 -- Refresh changed modules during addon reloads.

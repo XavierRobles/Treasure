@@ -7,6 +7,7 @@ local owner_names = {}
 local last_refresh = -100
 local scan_cursor = 0
 local resource_name
+local resource_log_name
 local MAX_ENTITY_INDEX = 2302
 
 local STATUS_MESSAGES = {
@@ -19,7 +20,7 @@ local STATUS_MESSAGES = {
 }
 
 -- Message IDs distinguish job abilities emitted as SkillFinish.
-local JOB_ABILITY_MESSAGES = { [100] = true, [317] = true, [324] = true }
+local JOB_ABILITY_MESSAGES = { [100] = true, [110] = true, [317] = true, [324] = true }
 
 local function clean_name(value)
     local name = tostring(value or ''):gsub('%z', ''):gsub('%s+$', '')
@@ -227,11 +228,15 @@ function entities.resolve_event(event)
                 target.status_name = clean_name(value)
             end
         end
-        if tonumber(target.message_id) == 125 or tonumber(target.message_id) == 674 then
+        if tonumber(target.message_id) == 125 or tonumber(target.message_id) == 140
+                or tonumber(target.message_id) == 674 then
             local ok, item = pcall(function()
                 return AshitaCore:GetResourceManager():GetItemById(tonumber(target.amount) or 0)
             end)
-            if ok then target.item_name = resource_name(item) end
+            if ok then
+                target.item_name = resource_log_name(item, false) or resource_name(item)
+                target.item_name_plural = resource_log_name(item, true) or target.item_name
+            end
         end
     end
     return event
@@ -261,6 +266,15 @@ resource_name = function(resource)
     end
     local ok, value = pcall(function()
         local list = resource.Name
+        return list and (list[1] or list[2])
+    end)
+    return ok and clean_name(value) or nil
+end
+
+resource_log_name = function(resource, plural)
+    if type(resource) ~= 'table' and type(resource) ~= 'userdata' then return nil end
+    local ok, value = pcall(function()
+        local list = plural and resource.LogNamePlural or resource.LogNameSingular
         return list and (list[1] or list[2])
     end)
     return ok and clean_name(value) or nil
@@ -298,10 +312,12 @@ function entities.action_name(event)
                 return resource_name(resources:GetAbilityById(id))
             end
             return clean_name(resources:GetString('monsters.abilities', id - 256, 2))
-        elseif category == 'ability' or category == 'ability_ready' or category == 'pet_ability'
-                or category == 'pet_ability_ready'
+        elseif category == 'ability' or category == 'ability_ready'
                 or category == 'dancer_ability' or category == 'rune_ability' then
             return resource_name(resources:GetAbilityById(id + 512))
+        elseif category == 'pet_ability' or category == 'pet_ability_ready' then
+            return resource_name(resources:GetAbilityById(id + 512))
+                    or clean_name(resources:GetString('monsters.abilities', id, 2))
         end
         if category == 'weapon_skill' then
             for _, target in ipairs((event and event.targets) or {}) do

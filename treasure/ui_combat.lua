@@ -164,25 +164,48 @@ local function draw_preview(cfg)
         local pair = options[part] == true and marks[options.style]
         return pair and (pair[1] .. value .. pair[2]) or value
     end
+    local function draw_decorated(part, value, base_color)
+        local options = cfg.decoration or {}
+        local marks = {
+            brackets = { '[', ']' }, parentheses = { '(', ')' }, braces = { '{', '}' },
+            quotes = { '"', '"' }, angles = { '<', '>' },
+        }
+        local pair = options[part] == true and marks[options.style]
+        local delimiter = palette['decoration_' .. part]
+        if not pair or not delimiter or delimiter.enabled == false or palette.enabled == false then
+            imgui.TextColored(base_color, decorated(part, value))
+            return
+        end
+        local delimiter_color = combat_chat_colors.preview_rgba(delimiter, { 1, 1, 1, 1 })
+        imgui.TextColored(delimiter_color, pair[1])
+        imgui.SameLine(0, 0)
+        imgui.TextColored(base_color, value)
+        imgui.SameLine(0, 0)
+        imgui.TextColored(delimiter_color, pair[2])
+    end
     imgui.TextUnformatted('Live preview')
-    imgui.BeginChild('combat_preview', { 0, 122 }, CHILD_BORDER, 0)
+    imgui.BeginChild('combat_preview', { 0, 164 }, CHILD_BORDER, 0)
     if cfg.enabled ~= true then
         imgui.TextDisabled('Combat Log is off. Original game messages remain unchanged.')
     else
         imgui.TextDisabled('Enabled: decoded combat is replaced locally by Treasure.')
-        imgui.TextColored(preview('p1', cfg.colors.self), 'Waky')
+        draw_decorated('actor', 'Waky', preview('p1', cfg.colors.self))
         imgui.SameLine(0, 4)
         imgui.TextDisabled(' -> ')
         imgui.SameLine(0, 4)
-        imgui.TextColored(preview('enemy', cfg.colors.enemy), 'Goblin')
+        draw_decorated('target', 'Goblin', preview('enemy', cfg.colors.enemy))
         imgui.SameLine(0, 4)
         imgui.TextColored(preview('damage', cfg.colors.damage), ': 32 + 41 + 29 damage (102)')
 
-        imgui.TextColored(preview('p2', cfg.colors.party), decorated('actor', 'Alice'))
+        draw_decorated('actor', 'Alice', preview('p2', cfg.colors.party))
         imgui.SameLine(0, 4)
-        imgui.TextColored(preview('action', cfg.colors.status), ' casts ' .. decorated('action', 'Cure III') .. ' -> ')
+        imgui.TextColored(preview('action', cfg.colors.status), ' casts ')
         imgui.SameLine(0, 0)
-        imgui.TextColored(preview('p1', cfg.colors.self), decorated('target', 'Waky'))
+        draw_decorated('action', 'Cure III', preview('action', cfg.colors.status))
+        imgui.SameLine(0, 0)
+        imgui.TextColored(preview('action', cfg.colors.status), ' -> ')
+        imgui.SameLine(0, 0)
+        draw_decorated('target', 'Waky', preview('p1', cfg.colors.self))
         imgui.SameLine(0, 0)
         imgui.TextColored(preview('healing', cfg.colors.healing), ': +184 HP')
         imgui.SameLine(0, 4)
@@ -191,6 +214,14 @@ local function draw_preview(cfg)
         imgui.TextColored(preview('status', cfg.colors.status), 'Haste')
         imgui.SameLine(0, 4)
         imgui.TextColored(cfg.colors.muted, ' -> Alice, Bob and Carol')
+
+        imgui.TextColored(preview('p2', cfg.colors.party), 'Alice gains ')
+        imgui.SameLine(0, 0)
+        draw_decorated('effect_gained', 'Haste', preview('status', cfg.colors.status))
+
+        draw_decorated('effect_lost', 'Poison', preview('status', cfg.colors.status))
+        imgui.SameLine(0, 4)
+        imgui.TextColored(preview('action', cfg.colors.status), 'removed')
     end
     imgui.EndChild()
 end
